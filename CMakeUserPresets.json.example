@@ -1,0 +1,19 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "home-viewer",
+      "inherits": "windows-vs",
+      "cacheVariables": {
+        "VISIONLAB_BUILD_VIEWER": "ON",
+        "VISIONLAB_THIRD_PARTY_ROOT": "${sourceDir}/../third_party"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "home-viewer", "configurePreset": "home-viewer", "configuration": "Debug" }
+  ],
+  "testPresets": [
+    { "name": "home-viewer", "configurePreset": "home-viewer", "configuration": "Debug", "output": { "outputOnFailure": true } }
+  ]
+}

@@ -1,0 +1,29 @@
+name: Build and test
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  headless:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            configure: linux-debug
+            build: linux-debug
+          - os: windows-2022
+            configure: windows-vs
+            build: windows-vs-debug
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake --preset ${{ matrix.configure }}
+      - run: cmake --build --preset ${{ matrix.build }} --parallel 2
+      - run: ctest --preset ${{ matrix.build }}
+  linux-adapters:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libopencv-dev libsdl2-dev ninja-build
+      - run: cmake --preset linux-debug -DVISIONLAB_WITH_OPENCV=ON -DVISIONLAB_BUILD_VIEWER=ON
+      - run: cmake --build --preset linux-debug --parallel 2
+      - run: ctest --preset linux-debug
