@@ -30,10 +30,15 @@ These are a practice sequence, not completed implementations.
 A stage has this shape (this illustrative code is not compiled yet):
 
 ```cpp
-class FirstLesson final : public visionlab::Stage {
+class FirstLesson final : public visionlab::Stage
+{
 public:
-    std::string_view name() const noexcept override { return "first-lesson"; }
-    void process(visionlab::FrameResult& result) override {
+    std::string_view name() const noexcept override
+    {
+        return "first-lesson";
+    }
+    void process(visionlab::FrameResult& result) override
+    {
         // Implement one operation here; preserve a snapshot if useful.
         result.debug_images.push_back({"before", result.frame.image});
     }

@@ -5,9 +5,11 @@
 #include <string_view>
 #include <vector>
 
-namespace visionlab {
+namespace visionlab
+{
 
-class Stage {
+class Stage
+{
 public:
     virtual ~Stage() = default;
     virtual std::string_view name() const noexcept = 0;
@@ -16,7 +18,8 @@ public:
 
 // Synchronous, ordered, single-stream pipeline. One instance owns stage state.
 // No windowing, event loop, renderer, device, or dependency-specific types here.
-class Pipeline {
+class Pipeline
+{
 public:
     void add(std::unique_ptr<Stage> stage);
     FrameResult process(Frame frame);

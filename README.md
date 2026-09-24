@@ -149,6 +149,7 @@ EOF from damaged input. The frame limit defaults to 300; it is a maximum for fil
 
 ## Where to work next
 
+- [Code conventions and formatting](docs/code-style.md)
 - [Architecture and ownership](docs/architecture.md)
 - [Lesson roadmap and adding a stage](lessons/README.md)
 - [Build and dependency choices](docs/decisions.md)

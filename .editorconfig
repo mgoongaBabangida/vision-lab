@@ -8,5 +8,8 @@ indent_style = space
 indent_size = 4
 trim_trailing_whitespace = true
 
+[*.{cpp,hpp,c,h}]
+max_line_length = 140
+
 [*.{json,yml,yaml}]
 indent_size = 2

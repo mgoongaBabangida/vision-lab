@@ -3,19 +3,21 @@
 #include "visionlab/frame.hpp"
 #include <optional>
 
-namespace visionlab {
+namespace visionlab
+{
 
-class FrameSource {
+class FrameSource
+{
 public:
     virtual ~FrameSource() = default;
     // nullopt means end of input. Configuration/processing errors throw.
     virtual std::optional<Frame> next() = 0;
 };
 
-class SyntheticSource final : public FrameSource {
+class SyntheticSource final : public FrameSource
+{
 public:
-    explicit SyntheticSource(std::uint64_t frame_count = 300,
-                             int width = 320, int height = 240, double fps = 30.0);
+    explicit SyntheticSource(std::uint64_t frame_count = 300, int width = 320, int height = 240, double fps = 30.0);
     std::optional<Frame> next() override;
 
 private:
