@@ -11,6 +11,34 @@ namespace visionlab::app
 namespace
 {
 
+void fit_window_to_display(SDL_Window* window)
+{
+    const int display = SDL_GetWindowDisplayIndex(window);
+    SDL_Rect usable{};
+    if (SDL_GetDisplayUsableBounds(display, &usable) != 0 && SDL_GetDisplayBounds(display, &usable) != 0)
+    {
+        return; // Keep the conservative creation size if the display cannot be queried.
+    }
+    int top = 0;
+    int left = 0;
+    int bottom = 0;
+    int right = 0;
+    if (SDL_GetWindowBordersSize(window, &top, &left, &bottom, &right) != 0 || top + bottom + left + right == 0)
+    {
+        // Some window managers cannot report decorations until the window is shown.
+        top = 48;
+        left = bottom = right = 8;
+    }
+    constexpr int margin = 16;
+    const int width = std::min(1200, std::max(1, usable.w - left - right - 2 * margin));
+    const int height = std::min(850, std::max(1, usable.h - top - bottom - 2 * margin));
+    // The normal minimum must not force the window beyond a small usable desktop.
+    SDL_SetWindowMinimumSize(window, std::min(640, width), std::min(480, height));
+    SDL_SetWindowSize(window, width, height);
+    SDL_SetWindowPosition(window, usable.x + (usable.w - width - left - right) / 2 + left,
+                          usable.y + (usable.h - height - top - bottom) / 2 + top);
+}
+
 void capture_framebuffer(const std::filesystem::path& path, int width, int height)
 {
     if (width <= 0 || height <= 0)
@@ -86,14 +114,14 @@ void Graphics::initialize(bool hidden)
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    const Uint32 flags =
-        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | (hidden ? SDL_WINDOW_HIDDEN : SDL_WINDOW_SHOWN);
-    window_ = SDL_CreateWindow("Vision Lab", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1200, 850, flags);
+    const Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_HIDDEN;
+    window_ = SDL_CreateWindow("Vision Lab", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 640, 480, flags);
     if (!window_)
     {
         throw std::runtime_error(SDL_GetError());
     }
     SDL_SetWindowMinimumSize(window_, 640, 480);
+    fit_window_to_display(window_);
     context_ = SDL_GL_CreateContext(window_);
     if (!context_)
     {
@@ -122,6 +150,10 @@ void Graphics::initialize(bool hidden)
     if (!renderer_)
     {
         throw std::runtime_error("Cannot initialize ImGui's OpenGL backend");
+    }
+    if (!hidden)
+    {
+        SDL_ShowWindow(window_);
     }
 }
 

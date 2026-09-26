@@ -4,6 +4,12 @@ The viewer executable uses SDL2 for its window/events, OpenGL 3.3 for textures a
 rendering, and Dear ImGui for controls. `main.cpp` parses options and runs `ViewerApp`.
 No renderer or UI types appear in the processing core or `ViewerSession`.
 
+At startup, the viewer fits its preferred 1200 x 850 client area to the display's
+usable desktop area, allowing for the taskbar, title bar, window borders, and a
+small outer margin. It centers the window before showing it and remains resizable.
+The minimum size is reduced when needed for a small display. If the desktop cannot
+be queried, it keeps a conservative 640 x 480 client area.
+
 ## Windows / Visual Studio 2022
 
 Configure and build the `home-viewer` preset, open
