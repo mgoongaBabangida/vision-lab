@@ -17,24 +17,37 @@ struct Frame
     Image image;
 };
 
-struct DebugImage
-{
-    std::string name;
-    Image image;
-};
-
 struct StageTiming
 {
     std::string name;
     double milliseconds;
 };
 
+// Image-space rectangles; presentation code chooses their visual appearance.
+struct BoxOverlay
+{
+    float x;
+    float y;
+    float width;
+    float height;
+    std::string label;
+};
+
+struct StageSnapshot
+{
+    std::string name;
+    Image image;
+    std::vector<BoxOverlay> boxes;
+    double milliseconds = 0;
+};
+
 struct FrameResult
 {
     Frame frame;
-    // Stages can publish snapshots; only a frontend decides how to display them.
-    std::vector<DebugImage> debug_images;
     std::vector<StageTiming> timings;
+    std::vector<BoxOverlay> boxes;
+    // Optional source + one owned snapshot after every stage, in execution order.
+    std::vector<StageSnapshot> snapshots;
 };
 
 } // namespace visionlab

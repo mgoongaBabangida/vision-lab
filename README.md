@@ -1,20 +1,20 @@
 # Vision Lab
 
 A small C++17 computer-vision workbench for learning, debugging, and experiments.
-The same processing pipeline runs in a console application or an optional SDL2 viewer.
+The same processing pipeline runs in a console application or an optional SDL2/OpenGL/Dear ImGui viewer.
 
-The initial pipeline is deliberately empty. Synthetic frames, video-file input,
-stage timing, and debug-image presentation provide the scaffolding; image-processing
+The initial pipeline is deliberately empty. Synthetic frames, image/video-file input,
+stage timing, and stage snapshots provide the scaffolding; image-processing
 lessons, detection, tracking, and ML are added incrementally.
 
 ```text
-Synthetic source / optional OpenCV video source
+Synthetic source / optional OpenCV image or video source
                     |
                     v
           Frame -> Pipeline -> FrameResult
                     |              |
               ordered stages       +--> CLI: CSV metadata, no window
-                                   +--> SDL2 viewer: frame / debug images
+                                   +--> ImGui viewer: source / stage snapshots
 
 Later: OpenCV stages -> detector -> tracker
        PyTorch training -> ONNX model -> C++ inference stage
@@ -91,28 +91,57 @@ build; SDL2.dll is copied beside the viewer. The engine is not linked or modifie
 The example uses a generated VS solution; for Visual Studio Open Folder, change
 its inherited preset from `windows-vs` to `windows-debug`.
 
-The viewer offers **Space** to pause, **N** to advance one frame, **Tab** to cycle
-the current frame and named debug images, and **Esc** to quit. It fits the image
-without changing aspect ratio. Playback is approximately 30 inspection frames/s,
-independent of the input FPS; it exits at EOF or the frame limit. It is not yet a
-media player with seeking or synchronized playback.
+Open `out/build/home-viewer/vision_lab.sln`, choose **Debug / x64**, and press **F5**.
+CMake sets `visionlab_viewer` as the startup project and the repository as its working
+directory. SDL2/OpenCV runtime DLLs are copied beside the executable. The viewer
+requires OpenGL 3.3; its ImGui source dependency is pinned in `external/imgui`.
+
+The viewer starts paused on the first frame. Its source-folder field defaults to
+this checkout's `data/` directory, independent of the launching working directory.
+Enter another folder and press **Refresh** (or Enter) to rescan. The source dropdown
+contains synthetic input plus recognized image/video files when OpenCV is enabled.
+Selection opens and validates the file before replacing the active session.
+
+**Pipeline** selects a named factory; **Pass-through** is the only initial entry.
+**Previous stage / Next stage / View** browse owned snapshots from the same frame
+without rerunning algorithms. They pause playback. The source is view 1, followed
+by one snapshot after each registered stage. Stage navigation is disabled for the
+empty pass-through pipeline. Adding a lesson pipeline populates these views automatically.
+
+**Play/Pause**, **Previous frame / Next frame**, and **Restart** control the source.
+Previous frame pauses and restores cached stage results, keeping the selected stage.
+Next frame traverses the cache before decoding anything new, so browsing does not
+rerun a tracker. History uses a 256 MiB pixel budget and retains at least two frames;
+Previous frame is disabled at the oldest cached frame. Restart clears history.
+Switching a source or pipeline also clears history. Switching a pipeline
+reprocesses the retained original frame with a fresh pipeline instance. Stateful stages
+start with fresh history; Restart replays from frame zero. Reaching EOF or `--frames`
+keeps the final image and controls visible, with backward navigation still available.
+Still images have playback and frame navigation disabled.
+
+Keyboard shortcuts (when the UI is not capturing keyboard input): **Space** toggles
+playback, **P/N** select the previous/next frame, **Left/Right** browse stages, and **Esc** quits.
+Images fit the available area without changing aspect ratio. Playback is approximately
+30 inspection frames/s, independent of source FPS; seeking and synchronized playback
+remain future work. See [viewer behavior and extension points](docs/viewer.md).
 
 On WSL/Linux, install SDL2 and enable the viewer in a separate build:
 
 ```bash
-sudo apt-get install -y libsdl2-dev
+sudo apt-get install -y libsdl2-dev libgl1-mesa-dev
 cmake -S . -B out/build/linux-viewer -G Ninja -DCMAKE_BUILD_TYPE=Debug -DVISIONLAB_BUILD_VIEWER=ON
 cmake --build out/build/linux-viewer --parallel
 ctest --test-dir out/build/linux-viewer --output-on-failure
 ./out/build/linux-viewer/bin/visionlab_viewer --frames 900
 ```
 
-Interactive display needs WSLg or another working Linux display server. The CLI
-and automatic viewer smoke test do not require a display server.
+Interactive display needs WSLg or another working Linux display server with OpenGL 3.3.
+The CLI and session tests need no display. For graphical smoke tests on a Linux server,
+install `xvfb` and run `xvfb-run -a ctest --test-dir out/build/linux-viewer --output-on-failure`.
 
-## Enable OpenCV video input
+## Enable OpenCV image and video input
 
-OpenCV 4 is optional. Only `core`, `imgproc`, and `videoio` are requested; no
+OpenCV 4 is optional. Only `core`, `imgproc`, `imgcodecs`, and `videoio` are requested; no
 `imshow`, `waitKey`, or HighGUI code enters the processing layer.
 
 WSL/Linux:
@@ -131,15 +160,16 @@ containing `OpenCVConfig.cmake` as `OpenCV_DIR`, preferably in a local preset:
 ```powershell
 cmake --preset windows-vs -DVISIONLAB_WITH_OPENCV=ON -DOpenCV_DIR="C:/path/to/opencv/build"
 cmake --build --preset windows-vs-debug --parallel
-# Add the package's actual DLL directory, e.g. x64/vc16/bin, for this shell session.
-$env:PATH = "C:\path\to\opencv\build\x64\vc16\bin;" + $env:PATH
 .\out\build\windows-vs\bin\Debug\visionlab_cli.exe --input data/clip.mp4 --frames 100
 ```
 
 OpenCV package layouts vary. Match architecture, compiler ABI, and Debug/Release
-libraries, and ensure its runtime/codec DLLs are discoverable when launching from
-the terminal or debugger. No OpenCV download or installation happens during CMake
-configuration. Both optional switches can be enabled together for video viewing.
+libraries. CMake deploys imported OpenCV DLLs and the official package's FFmpeg video
+plugin beside executables; custom packages may need additional runtime dependencies.
+No OpenCV download or installation happens during CMake configuration. Both optional
+switches can be enabled together for image/video viewing. For a local package extracted
+under `out/deps/opencv`, add `VISIONLAB_WITH_OPENCV=ON` and
+`OpenCV_DIR=${sourceDir}/out/deps/opencv/build` to the ignored home-viewer preset.
 
 The adapter currently uses `frame_index / reported_fps` as a **nominal timestamp**.
 Unknown FPS produces an empty CSV timestamp. Variable-frame-rate timing, seeking,
@@ -161,4 +191,5 @@ to a file under `runs/` when recording experiments. Local video, model weights,
 build outputs, and machine-specific paths stay out of Git.
 
 CI builds the headless project on Windows and Linux, then builds and tests the
-OpenCV and SDL2 adapters on Linux. Viewer tests use SDL's dummy video driver.
+OpenCV and viewer adapters on Linux. Graphical tests run under Xvfb with OpenGL;
+session tests independently verify switching, stage browsing, and EOF without a window.

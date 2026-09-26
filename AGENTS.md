@@ -4,7 +4,10 @@
 - `visionlab_core` must remain independent of SDL, OpenGL, OpenCV, and windowing.
 - Put OpenCV implementation in its optional adapter target; UI belongs in `apps/viewer`.
 - Preserve a working headless build with both optional features disabled.
-- Frame/debug-image ownership must be explicit; never retain borrowed decoder buffers.
+- Frame/stage-snapshot ownership must be explicit; never retain borrowed decoder buffers.
+- Register pipelines in `apps/common/catalogs.cpp`; each factory must create fresh stage instances.
+- Stage navigation must never advance a frame or rerun stateful processing. Capture snapshots only when requested.
+- Preserve the current viewer session if a new source or pipeline fails to open/process.
 - Use target-scoped CMake settings and presets; do not commit absolute machine paths.
 - Treat the sibling engine and shared third_party directory as read-only dependencies.
 - Keep datasets, model weights, generated results, and build outputs out of Git.
@@ -24,3 +27,4 @@
 - Otherwise write the explicit type, including range-for variables and function-call results.
   A descriptive variable or function name alone does not make its type obvious.
 - Review `auto` usage manually; clang-format handles layout, not this semantic rule.
+- Preserve vendored code formatting in `external/`; update its recorded license/provenance/checksums when changed.

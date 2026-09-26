@@ -1,7 +1,4 @@
 #include "options.hpp"
-#ifdef VISIONLAB_WITH_OPENCV
-#include "visionlab/opencv/video_source.hpp"
-#endif
 #include <charconv>
 #include <stdexcept>
 #include <string_view>
@@ -33,6 +30,14 @@ Options parse_options(int argc, char** argv)
                 throw std::invalid_argument("--frames requires a positive integer");
             }
         }
+        else if (argument == "--pipeline")
+        {
+            if (++i == argc || std::string_view(argv[i]).empty())
+            {
+                throw std::invalid_argument("--pipeline requires a pipeline ID");
+            }
+            options.pipeline = argv[i];
+        }
         else if (argument == "--input")
         {
             if (++i == argc || std::string_view(argv[i]).empty())
@@ -52,9 +57,9 @@ Options parse_options(int argc, char** argv)
 std::string usage(const std::string& executable)
 {
     return "Usage: " + executable +
-           " [--frames N] [--input video-file] [--help]\n"
+           " [--frames N] [--input image-or-video] [--pipeline ID] [--help]\n"
            "Default: 300 synthetic frames. --frames sets the maximum frame count.\n"
-           "Video input requires VISIONLAB_WITH_OPENCV=ON.\n";
+           "File input requires VISIONLAB_WITH_OPENCV=ON. Default pipeline: pass-through.\n";
 }
 
 std::unique_ptr<FrameSource> make_source(const Options& options)
@@ -63,11 +68,7 @@ std::unique_ptr<FrameSource> make_source(const Options& options)
     {
         return std::make_unique<SyntheticSource>(options.frames);
     }
-#ifdef VISIONLAB_WITH_OPENCV
-    return make_video_source(options.input);
-#else
-    throw std::runtime_error("Video input is disabled. Configure with -DVISIONLAB_WITH_OPENCV=ON and install OpenCV 4.");
-#endif
+    return open_source(SourceCatalog::from_path(std::filesystem::u8path(options.input)), options.frames);
 }
 
 } // namespace visionlab::app

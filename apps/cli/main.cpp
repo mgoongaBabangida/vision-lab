@@ -16,7 +16,7 @@ int main(int argc, char** argv)
             return 0;
         }
         std::unique_ptr<visionlab::FrameSource> source = visionlab::app::make_source(options);
-        visionlab::Pipeline pipeline = visionlab::app::make_pipeline();
+        visionlab::Pipeline pipeline = visionlab::app::make_pipeline(options.pipeline);
         std::cout.imbue(std::locale::classic());
         std::cout << "frame,timestamp_seconds,width,height,stages\n" << std::fixed << std::setprecision(6);
         std::uint64_t count = 0;

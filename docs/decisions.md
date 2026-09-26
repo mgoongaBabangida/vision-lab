@@ -31,10 +31,19 @@ silently, vendor the engine, or commit binary libraries and datasets.
 ## Minimal scaffold, then one concept at a time
 
 Only synthetic input, optional file decoding, a pass-through pipeline, and two
-frontends exist initially. The viewer is intentionally small: display, pause,
-single-step, named debug views. There are no implemented CV lessons, detector,
+frontends exist initially. The viewer provides folder/source selection, a named
+pipeline catalog, pause/step controls, and source/stage snapshots. There are no implemented CV lessons, detector,
 tracker, neural network, calibration suite, or flight-control integration.
 
 Meaningful tests protect ownership, stage order, timing metadata, EOF, CLI errors,
 video decoding, and the ability to build/run without a display. CI does not pretend
 to test interactive controls or all camera/codec/platform combinations.
+
+## Viewer UI
+
+The viewer uses SDL2 + OpenGL 3.3 + Dear ImGui. A pinned copy of the engine's matched
+ImGui core/backends lives in `external/imgui` with its license and provenance. This
+keeps the build independent of the engine checkout and avoids network downloads at
+configuration time. CMake discovers no graphics dependencies in a headless build.
+The synchronous session is independently testable; add a worker when processing
+becomes expensive enough to justify asynchronous state management.

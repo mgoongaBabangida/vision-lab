@@ -20,11 +20,13 @@ These are a practice sequence, not completed implementations.
 1. Enable OpenCV and add the stage under `src/opencv/` with a public header under
    `include/visionlab/opencv/`. Add the source to `visionlab_opencv` in CMake.
 2. Implement `Stage::name()` and `Stage::process(FrameResult&)`.
-3. Register it in `apps/common/options.hpp`'s `make_pipeline()` (moving that function
-   to a `.cpp` file is appropriate as it grows). Guard optional OpenCV composition
-   consistently; the current OpenCV compile definition is private to `visionlab_app_common`.
+3. Register a named factory in `PipelineCatalog::PipelineCatalog()` in
+   `apps/common/catalogs.cpp`, adding your stages in order. Guard OpenCV-dependent
+   entries with `#ifdef VISIONLAB_WITH_OPENCV`. The dropdown and CLI share this catalog.
 4. Keep `cv::imshow`, event handling, and SDL/OpenGL out of the stage.
-5. Add named, owned BGR8 debug images to `result.debug_images` and inspect with Tab.
+5. Write the stage's output to `result.frame.image`, and optional image-space boxes
+   to `result.boxes`. The pipeline automatically saves an owned image/overlay snapshot
+   after every stage when inspected in the viewer. Browse with Previous/Next stage.
 6. Validate the lesson's actual behavior on a tiny known input, then try video.
 
 A stage has this shape (this illustrative code is not compiled yet):
@@ -39,8 +41,8 @@ public:
     }
     void process(visionlab::FrameResult& result) override
     {
-        // Implement one operation here; preserve a snapshot if useful.
-        result.debug_images.push_back({"before", result.frame.image});
+        // Implement one operation on result.frame.image here.
+        // The pipeline captures its output automatically for the viewer.
     }
 };
 ```
@@ -48,3 +50,21 @@ public:
 Registering the same stage at the shared composition point makes CLI and viewer
 results comparable. Use the CLI for repeatable batch runs and the viewer for
 inspection. Add controls/parameters only when the lesson has something to vary.
+
+The factory has this shape once `FirstLesson` is implemented:
+
+```cpp
+add({"first-lesson", "First lesson", []
+{
+    Pipeline pipeline;
+    pipeline.add(std::make_unique<FirstLesson>());
+    return pipeline;
+}});
+```
+
+The ID is accepted by `visionlab_cli --pipeline first-lesson`; the label appears
+in the viewer. Each factory call must produce fresh stage instances, so source and
+pipeline changes cannot inherit previous tracking history. Split a multi-step lesson
+into stages when you want to inspect each intermediate image. Retain the source's
+original frame index/time when modifying its pixels. Box coordinates must refer to
+the current stage image, especially after resizing or cropping.

@@ -17,7 +17,7 @@ class VideoSource final : public FrameSource
 public:
     explicit VideoSource(const std::string& path)
     {
-        if (!std::filesystem::is_regular_file(path) || !capture_.open(path))
+        if (!std::filesystem::is_regular_file(std::filesystem::u8path(path)) || !capture_.open(path))
         {
             throw std::runtime_error("Cannot open video file: " + path);
         }

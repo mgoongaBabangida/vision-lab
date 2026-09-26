@@ -22,7 +22,7 @@ class Pipeline
 {
 public:
     void add(std::unique_ptr<Stage> stage);
-    FrameResult process(Frame frame);
+    FrameResult process(Frame frame, bool capture_snapshots = false);
 
 private:
     std::vector<std::unique_ptr<Stage>> stages_;

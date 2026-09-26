@@ -1,6 +1,7 @@
 # C++ code conventions
 
 These conventions apply to source files, headers, tests, and C++ documentation examples.
+Vendored sources under `external/` retain their original formatting.
 
 - Use **Allman braces**: scope-opening and closing braces go on their own lines.
   This includes namespaces, classes, structs, enums, functions, lambdas, loops,

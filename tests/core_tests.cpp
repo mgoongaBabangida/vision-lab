@@ -44,7 +44,6 @@ public:
     void process(visionlab::FrameResult& result) override
     {
         result.frame.image.data()[0] += 3;
-        result.debug_images.push_back({"after-add", result.frame.image});
     }
 };
 
@@ -117,7 +116,7 @@ int main()
         const std::uint8_t first_pixel = first->image.data()[0];
         const visionlab::FrameResult unchanged = empty.process(std::move(*first));
         require(unchanged.frame.index == 0 && unchanged.frame.image.data()[0] == first_pixel, "Empty pipeline must preserve frame data");
-        require(unchanged.timings.empty() && unchanged.debug_images.empty(), "Empty pipeline output");
+        require(unchanged.timings.empty() && unchanged.snapshots.empty(), "Empty headless pipeline output");
         std::optional<visionlab::Frame> second = source.next();
         require(second && second->index == 1 && second->timestamp_seconds && std::abs(*second->timestamp_seconds - 0.04) < 1e-9,
                 "Frame sequence/timestamps");
@@ -129,10 +128,10 @@ int main()
         ordered.add(std::make_unique<AddStage>());
         ordered.add(std::make_unique<MultiplyStage>());
         second->image.data()[0] = 10;
-        visionlab::FrameResult result = ordered.process(std::move(*second));
+        visionlab::FrameResult result = ordered.process(std::move(*second), true);
         require(result.frame.image.data()[0] == 26, "Stages must run in insertion order");
-        require(result.debug_images.size() == 1 && result.debug_images[0].image.data()[0] == 13,
-                "Debug snapshots must own their pixels independently");
+        require(result.snapshots.size() == 3 && result.snapshots[1].image.data()[0] == 13,
+                "Stage snapshots must own their pixels independently");
         require(result.timings.size() == 2 && result.timings[0].name == "add" && result.timings[1].name == "multiply" &&
                     result.timings[0].milliseconds >= 0,
                 "Stage timings must describe the executed stages");

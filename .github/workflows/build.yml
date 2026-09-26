@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y libopencv-dev libsdl2-dev ninja-build
+      - run: sudo apt-get update && sudo apt-get install -y libopencv-dev libsdl2-dev libgl1-mesa-dev xvfb ninja-build
       - run: cmake --preset linux-debug -DVISIONLAB_WITH_OPENCV=ON -DVISIONLAB_BUILD_VIEWER=ON
       - run: cmake --build --preset linux-debug --parallel 2
-      - run: ctest --preset linux-debug
+      - run: xvfb-run -a ctest --preset linux-debug
