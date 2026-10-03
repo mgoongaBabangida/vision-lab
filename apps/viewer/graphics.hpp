@@ -19,7 +19,7 @@ public:
     ~Graphics();
     void initialize(bool hidden);
     SDL_Window* window() const noexcept;
-    void draw_image(const ViewerSession& session);
+    void draw_image(const ViewerSession& session, std::size_t side = 0);
     void present(const std::filesystem::path& capture_path = {});
 
 private:
@@ -29,9 +29,13 @@ private:
     bool imgui_ = false;
     bool platform_ = false;
     bool renderer_ = false;
-    GLuint texture_ = 0;
-    std::uint64_t uploaded_revision_ = std::numeric_limits<std::uint64_t>::max();
-    std::size_t uploaded_stage_ = std::numeric_limits<std::size_t>::max();
+    struct Texture
+    {
+        GLuint id = 0;
+        std::uint64_t revision = std::numeric_limits<std::uint64_t>::max();
+        std::size_t stage = std::numeric_limits<std::size_t>::max();
+    };
+    std::array<Texture, 2> textures_;
 };
 
 } // namespace visionlab::app

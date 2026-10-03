@@ -14,6 +14,64 @@
 
 namespace visionlab::app
 {
+namespace
+{
+
+void draw_pipeline_controls(ViewerSession& session, const PipelineCatalog& pipelines, std::size_t side)
+{
+    ImGui::PushID(static_cast<int>(side));
+    const char* pipeline_label = session.pipeline_id(side).c_str();
+    for (const PipelineDefinition& definition : pipelines.entries())
+    {
+        if (definition.id == session.pipeline_id(side))
+        {
+            pipeline_label = definition.label.c_str();
+        }
+    }
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::BeginCombo("##Pipeline", pipeline_label))
+    {
+        for (const PipelineDefinition& definition : pipelines.entries())
+        {
+            if (ImGui::Selectable(definition.label.c_str(), definition.id == session.pipeline_id(side)))
+            {
+                session.select_pipeline(definition.id, side);
+            }
+        }
+        ImGui::EndCombo();
+    }
+    const FrameResult* result = session.result(side);
+    ImGui::BeginDisabled(!result || session.stage_index(side) == 0);
+    if (ImGui::Button("Previous stage"))
+    {
+        session.select_stage(session.stage_index(side) - 1, side);
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!result || session.stage_index(side) + 1 >= result->snapshots.size());
+    if (ImGui::Button("Next stage"))
+    {
+        session.select_stage(session.stage_index(side) + 1, side);
+    }
+    ImGui::EndDisabled();
+    ImGui::SetNextItemWidth(-1);
+    if (result && ImGui::BeginCombo("##Stage", session.snapshot(side)->name.c_str()))
+    {
+        for (std::size_t index = 0; index < result->snapshots.size(); ++index)
+        {
+            ImGui::PushID(static_cast<int>(index));
+            if (ImGui::Selectable(result->snapshots[index].name.c_str(), index == session.stage_index(side)))
+            {
+                session.select_stage(index, side);
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::PopID();
+}
+
+} // namespace
 
 ViewerOptions parse_viewer_options(int argc, char** argv)
 {
@@ -37,6 +95,14 @@ ViewerOptions parse_viewer_options(int argc, char** argv)
             {
                 options.capture_path = std::filesystem::u8path(argv[index]);
             }
+        }
+        else if (argument == "--compare-pipeline")
+        {
+            if (++index == argc)
+            {
+                throw std::invalid_argument("--compare-pipeline requires a pipeline ID");
+            }
+            options.compare_pipeline = argv[index];
         }
         else if (argument == "--smoke-test")
         {
@@ -63,7 +129,7 @@ int ViewerApp::run()
 {
     if (options_.processing.help)
     {
-        std::cout << usage("visionlab_viewer") << "Viewer: [--source-dir folder]\n"
+        std::cout << usage("visionlab_viewer") << "Viewer: [--source-dir folder] [--compare-pipeline ID]\n"
                   << "Space: play/pause. P/N: previous/next frame. Left/Right: stage. Esc: quit.\n"
                   << "Starts paused. EOF keeps the window open. Pipeline changes reset stage history.\n";
         return 0;
@@ -102,7 +168,19 @@ int ViewerApp::run()
     }
     if (!options_.processing.input.empty())
     {
-        session.select_source(SourceCatalog::from_path(std::filesystem::u8path(options_.processing.input)));
+        if (!session.select_source(SourceCatalog::from_path(std::filesystem::u8path(options_.processing.input))))
+        {
+            throw std::runtime_error(session.error());
+        }
+    }
+    if (!options_.compare_pipeline.empty())
+    {
+        if (!session.select_pipeline(options_.compare_pipeline, 1))
+        {
+            throw std::runtime_error(session.error());
+        }
+        session.select_stage(session.result()->snapshots.size() - 1);
+        session.select_stage(session.result(1)->snapshots.size() - 1, 1);
     }
     Graphics graphics;
     graphics.initialize(options_.smoke_test);
@@ -198,25 +276,10 @@ int ViewerApp::run()
         {
             ImGui::TextUnformatted("File input is unavailable in this build; synthetic input is ready.");
         }
-        ImGui::SetNextItemWidth(std::max(200.0f, ImGui::GetContentRegionAvail().x - 130.0f));
-        const char* pipeline_label = session.pipeline_id().c_str();
-        for (const PipelineDefinition& definition : pipelines.entries())
+        bool compare = session.compare_mode();
+        if (ImGui::Checkbox("Compare mode", &compare))
         {
-            if (definition.id == session.pipeline_id())
-            {
-                pipeline_label = definition.label.c_str();
-            }
-        }
-        if (ImGui::BeginCombo("Pipeline", pipeline_label))
-        {
-            for (const PipelineDefinition& definition : pipelines.entries())
-            {
-                if (ImGui::Selectable(definition.label.c_str(), definition.id == session.pipeline_id()))
-                {
-                    session.select_pipeline(definition.id);
-                }
-            }
-            ImGui::EndCombo();
+            session.set_compare_mode(compare);
         }
         ImGui::BeginDisabled(!session.can_next_frame());
         if (ImGui::Button(session.playing() ? "Pause" : "Play"))
@@ -253,34 +316,17 @@ int ViewerApp::run()
         ImGui::SameLine();
         ImGui::TextUnformatted(session.ended() ? "End of source / frame limit" : session.playing() ? "Playing" : "Paused");
         ImGui::Separator();
-        const FrameResult* result = session.result();
-        ImGui::BeginDisabled(!result || session.stage_index() == 0);
-        if (ImGui::Button("Previous stage"))
+        const int pane_count = session.compare_mode() ? 2 : 1;
+        if (ImGui::BeginTable("Pipeline controls", pane_count, ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_BordersInnerV))
         {
-            session.select_stage(session.stage_index() - 1);
-        }
-        ImGui::EndDisabled();
-        ImGui::SameLine();
-        ImGui::BeginDisabled(!result || session.stage_index() + 1 >= result->snapshots.size());
-        if (ImGui::Button("Next stage"))
-        {
-            session.select_stage(session.stage_index() + 1);
-        }
-        ImGui::EndDisabled();
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(std::max(150.0f, ImGui::GetContentRegionAvail().x - 70.0f));
-        if (result && ImGui::BeginCombo("View", session.snapshot()->name.c_str()))
-        {
-            for (std::size_t index = 0; index < result->snapshots.size(); ++index)
+            for (int pane = 0; pane < pane_count; ++pane)
             {
-                ImGui::PushID(static_cast<int>(index));
-                if (ImGui::Selectable(result->snapshots[index].name.c_str(), index == session.stage_index()))
-                {
-                    session.select_stage(index);
-                }
-                ImGui::PopID();
+                ImGui::TableNextColumn();
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted(session.compare_mode() ? (pane == 0 ? "Left pipeline" : "Right pipeline") : "Pipeline");
+                draw_pipeline_controls(session, pipelines, static_cast<std::size_t>(pane));
             }
-            ImGui::EndCombo();
+            ImGui::EndTable();
         }
         // Handle controls before playback: inspecting a stage freezes this frame immediately.
         if (session.playing() && loop_start >= next_frame_at)
@@ -288,26 +334,36 @@ int ViewerApp::run()
             session.next_frame();
             next_frame_at = loop_start + std::chrono::milliseconds(33);
         }
-        result = session.result();
-        if (result)
-        {
-            const StageSnapshot& snapshot = *session.snapshot();
-            ImGui::Text("Frame %llu  |  View %zu of %zu  |  %d x %d  |  Stage %.3f ms",
-                        static_cast<unsigned long long>(result->frame.index), session.stage_index() + 1, result->snapshots.size(),
-                        snapshot.image.width(), snapshot.image.height(), snapshot.milliseconds);
-            if (result->snapshots.size() == 1)
-            {
-                ImGui::TextDisabled("Pass-through preserves the source. Lesson stages will appear here.");
-            }
-        }
         if (!session.error().empty())
         {
             ImGui::TextWrapped("Source / pipeline: %s", session.error().c_str());
         }
         ImGui::Separator();
-        ImGui::BeginChild("Image", ImVec2(0, 0), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-        graphics.draw_image(session);
-        ImGui::EndChild();
+        if (ImGui::BeginTable("Pipeline images", pane_count, ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_BordersInnerV))
+        {
+            for (int pane = 0; pane < pane_count; ++pane)
+            {
+                ImGui::TableNextColumn();
+                ImGui::PushID(pane);
+                const std::size_t side = static_cast<std::size_t>(pane);
+                const FrameResult* result = session.result(side);
+                if (result)
+                {
+                    const StageSnapshot& snapshot = *session.snapshot(side);
+                    ImGui::TextWrapped("Frame %llu | View %zu/%zu | %d x %d | %.3f ms",
+                                       static_cast<unsigned long long>(result->frame.index), session.stage_index(side) + 1,
+                                       result->snapshots.size(), snapshot.image.width(), snapshot.image.height(), snapshot.milliseconds);
+                }
+                const float image_height =
+                    ImGui::GetContentRegionAvail().y - ImGui::GetStyle().ItemSpacing.y - 2.0f * ImGui::GetStyle().CellPadding.y;
+                ImGui::BeginChild("Image", ImVec2(0, std::max(50.0f, image_height)), false,
+                                  ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+                graphics.draw_image(session, side);
+                ImGui::EndChild();
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
         ImGui::End();
         ImGui::Render();
         ++rendered_frames;

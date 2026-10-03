@@ -102,7 +102,12 @@ Enter another folder and press **Refresh** (or Enter) to rescan. The source drop
 contains synthetic input plus recognized image/video files when OpenCV is enabled.
 Selection opens and validates the file before replacing the active session.
 
-**Pipeline** selects a named factory; **Pass-through** is the only initial entry.
+**Pipeline** selects a named factory; **Pass-through** keeps the source unchanged.
+OpenCV builds also offer **Practice 01 - Grayscale** and **Practice 02 - Mean blur (exercise)**.
+Both operations are implemented by the learner; the latter combines grayscale with
+a 3x3 mean filter. **Practice 03 - Gaussian blur (exercise)** is the next scaffold:
+its Gaussian stage is intentionally left for the learner to implement. See the
+[lesson progress](lessons/README.md).
 **Previous stage / Next stage / View** browse owned snapshots from the same frame
 without rerunning algorithms. They pause playback. The source is view 1, followed
 by one snapshot after each registered stage. Stage navigation is disabled for the

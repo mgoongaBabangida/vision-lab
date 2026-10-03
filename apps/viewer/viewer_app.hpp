@@ -12,6 +12,7 @@ struct ViewerOptions
     std::filesystem::path source_folder;
     bool smoke_test = false;
     std::filesystem::path capture_path;
+    std::string compare_pipeline;
 };
 
 ViewerOptions parse_viewer_options(int argc, char** argv);

@@ -37,7 +37,7 @@ the existing shared dependencies are never modified by the project.
 | Previous frame | Pause and select the previous cached frame, keeping the selected stage. |
 | Next frame | Pause and select the next cached frame; at the newest frame, decode/process one new frame. |
 | Play | Advance at approximately 30 inspection frames/s, keeping the selected stage. |
-| Restart | Reopen current source and reset pipeline history at frame zero, paused. |
+| Restart | Reopen current source and reset pipeline history at frame zero, paused; preserve selected stages. |
 | End of input/frame limit | Keep last image and controls visible; Previous frame still works. Forward playback can replay the cache. |
 
 An image source yields one frame. Its Play and both frame-navigation controls are disabled.
@@ -62,6 +62,39 @@ Space toggles playback, P/N select the previous/next frame, Left/Right browse st
 when ImGui is not capturing the keyboard. Folder editing and focused widgets take
 priority over global shortcuts.
 
+## Compare mode
+
+Enable **Compare mode** above the playback controls for two side-by-side panes.
+Each pane has its own pipeline dropdown, Previous/Next stage buttons, and stage
+dropdown. The right pane initially uses Pass-through, so it can show the original
+beside a processed result. Both panes can also select the same pipeline and show
+different stages. Left/Right keyboard shortcuts continue to control the left pane.
+
+Source selection, Play/Pause, Previous/Next frame, and Restart are shared. One
+decoder provides one raw frame; each pipeline processes an independent copy.
+Both results enter the cache together, including their overlays. Stage browsing
+and cached frame navigation never rerun processing. Restart preserves both stage
+selections. A processing failure retains both last displayed results and pauses.
+
+Changing one pipeline starts fresh stages on the displayed raw frame, clears frame
+history, and pauses; the other pane's current image and stage remain unchanged.
+If viewing an older cached frame, the unchanged pipeline is reconstructed by
+replaying from its last start position, so future stateful results remain consistent.
+This is synchronous and can take time for long videos or expensive stages.
+Failed configuration changes preserve the previous session.
+
+Enabling comparison starts the right pipeline at the current frame and clears
+the old frame cache. Disabling it releases right-side results and retains the left
+history. The last right-side pipeline/stage choice is remembered for reentry.
+The 256 MiB history budget includes both panes, so comparison may retain fewer frames.
+
+For launch or layout checks, pass `--compare-pipeline ID` in addition to `--pipeline ID`.
+This starts in compare mode with each pipeline's final stage selected. Example:
+
+```text
+visionlab_viewer --pipeline practice-07-erosion --compare-pipeline practice-07-dilation
+```
+
 ## Sources and pipelines
 
 `SourceCatalog` accepts PNG/JPEG/BMP/TIFF/WebP images and common MP4/AVI/MOV/MKV/M4V/
@@ -71,8 +104,14 @@ is always present. Without OpenCV the catalog lists only synthetic input. Folder
 errors preserve the last successful list. Folder watching and recursive scans are
 not implemented; use Refresh after adding files.
 
-`PipelineCatalog` maps stable IDs and display labels to factories. Pass-through is
-the only shipped pipeline: it has a Source snapshot and no algorithm stages.
+`PipelineCatalog` maps stable IDs and display labels to factories. Pass-through has
+a Source snapshot and no algorithm stages. OpenCV builds also include the completed
+**Practice 01 - Grayscale** and **Practice 02 - Mean blur (exercise)**. Practice 02
+shows Source, Grayscale, and Mean blur, using the learner's completed 3x3 filter.
+**Practice 03 - Gaussian blur (exercise)** shows Source, Grayscale, and Gaussian blur.
+The Gaussian stage is a scaffold and initially leaves the grayscale image unchanged.
+Both filter pipelines start from the same raw frame when selected while paused;
+the Gaussian pipeline does not run the mean-blur stage first.
 Add lessons in `apps/common/catalogs.cpp`; see `lessons/README.md`. The CLI uses the
 same catalog with `--pipeline <id>`, so GUI selections do not define separate algorithms.
 
@@ -88,7 +127,7 @@ Stage timing excludes the snapshot copy and rendering.
 `ViewerSession` retains original frames and their processed results in a bounded cache.
 The history cursor selects which frame is displayed while the decoder and pipeline
 stay at the newest processed frame. `Graphics` uploads a selected image only when
-the frame revision or selected stage changes, fits its aspect ratio, and scales its
+the frame revision or selected stage changes, using independent textures for each pane. It fits the aspect ratio and scales
 overlays to the same displayed rectangle. Nearest sampling keeps pixels sharp.
 
 ## Validation and current limits

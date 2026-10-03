@@ -72,9 +72,12 @@ void capture_framebuffer(const std::filesystem::path& path, int width, int heigh
 
 Graphics::~Graphics()
 {
-    if (texture_)
+    for (Texture& texture : textures_)
     {
-        glDeleteTextures(1, &texture_);
+        if (texture.id)
+        {
+            glDeleteTextures(1, &texture.id);
+        }
     }
     if (renderer_)
     {
@@ -162,21 +165,22 @@ SDL_Window* Graphics::window() const noexcept
     return window_;
 }
 
-void Graphics::draw_image(const ViewerSession& session)
+void Graphics::draw_image(const ViewerSession& session, std::size_t side)
 {
-    const StageSnapshot* snapshot = session.snapshot();
+    const StageSnapshot* snapshot = session.snapshot(side);
     if (!snapshot)
     {
         return;
     }
-    if (uploaded_revision_ != session.revision() || uploaded_stage_ != session.stage_index())
+    Texture& texture = textures_.at(side);
+    if (texture.revision != session.revision() || texture.stage != session.stage_index(side))
     {
         const Image& image = snapshot->image;
-        if (!texture_)
+        if (!texture.id)
         {
-            glGenTextures(1, &texture_);
+            glGenTextures(1, &texture.id);
         }
-        glBindTexture(GL_TEXTURE_2D, texture_);
+        glBindTexture(GL_TEXTURE_2D, texture.id);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -188,8 +192,8 @@ void Graphics::draw_image(const ViewerSession& session)
         {
             throw std::runtime_error("Cannot upload image texture");
         }
-        uploaded_revision_ = session.revision();
-        uploaded_stage_ = session.stage_index();
+        texture.revision = session.revision();
+        texture.stage = session.stage_index(side);
     }
     const ImVec2 available = ImGui::GetContentRegionAvail();
     const float scale =
@@ -202,7 +206,7 @@ void Graphics::draw_image(const ViewerSession& session)
     const ImVec2 cursor = ImGui::GetCursorPos();
     ImGui::SetCursorPos(ImVec2(cursor.x + (available.x - size.x) * 0.5f, cursor.y + (available.y - size.y) * 0.5f));
     const ImVec2 origin = ImGui::GetCursorScreenPos();
-    ImGui::Image(reinterpret_cast<ImTextureID>(static_cast<intptr_t>(texture_)), size);
+    ImGui::Image(reinterpret_cast<ImTextureID>(static_cast<intptr_t>(texture.id)), size);
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     draw_list->PushClipRect(origin, ImVec2(origin.x + size.x, origin.y + size.y), true);
     for (const BoxOverlay& box : snapshot->boxes)

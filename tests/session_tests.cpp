@@ -73,8 +73,10 @@ void test_frame_history(const visionlab::app::PipelineCatalog& catalog, const st
             "Pipeline switch clears old history and processes only the displayed raw frame with fresh stages");
     require(session.next_frame() && session.result()->frame.index == 3 && session.result()->boxes[0].label == "2",
             "Pipeline switch in history repositions decoding to the following frame");
-    require(session.restart() && !session.can_previous_frame() && session.result()->frame.index == 0,
-            "Restart clears history and pipeline state");
+    session.select_stage(2);
+    require(session.restart() && !session.can_previous_frame() && session.result()->frame.index == 0 && session.stage_index() == 2 &&
+                session.snapshot()->boxes[0].label == "1",
+            "Restart preserves the selected stage while clearing history and pipeline state");
     require(session.next_frame() && session.select_source({"Another synthetic", {}, visionlab::app::SourceKind::Synthetic}) &&
                 !session.can_previous_frame() && session.result()->frame.index == 0,
             "Source selection clears old history");
@@ -86,6 +88,110 @@ void test_frame_history(const visionlab::app::PipelineCatalog& catalog, const st
             "Budget evicts oldest frames while retaining at least the current and previous frame");
     require(bounded.next_frame() && bounded.result()->frame.index == 2 && bounded.next_frame() && bounded.result()->frame.index == 3,
             "Forward browsing after eviction resumes at the next undecoded frame");
+}
+
+class FailingStage final : public visionlab::Stage
+{
+public:
+    explicit FailingStage(int successful_frames) : successful_frames_(successful_frames)
+    {
+    }
+    std::string_view name() const noexcept override
+    {
+        return "failure";
+    }
+    void process(visionlab::FrameResult&) override
+    {
+        if (successful_frames_-- == 0)
+        {
+            throw std::runtime_error("Expected processing failure");
+        }
+    }
+
+private:
+    int successful_frames_;
+};
+
+void test_comparison()
+{
+    const auto calls = std::make_shared<int>(0);
+    visionlab::app::PipelineCatalog catalog;
+    catalog.add({"count", "Counting", [calls]
+                 {
+                     visionlab::Pipeline pipeline;
+                     pipeline.add(std::make_unique<CountingStage>(calls, std::uint8_t{10}));
+                     pipeline.add(std::make_unique<CountingStage>(calls, std::uint8_t{20}));
+                     return pipeline;
+                 }});
+    catalog.add({"fail-now", "Failure", []
+                 {
+                     visionlab::Pipeline pipeline;
+                     pipeline.add(std::make_unique<FailingStage>(0));
+                     return pipeline;
+                 }});
+    catalog.add({"fail-next", "Later failure", []
+                 {
+                     visionlab::Pipeline pipeline;
+                     pipeline.add(std::make_unique<FailingStage>(1));
+                     return pipeline;
+                 }});
+    visionlab::app::ViewerSession session(catalog, 5, 1);
+    require(session.select_source({"Synthetic", {}, visionlab::app::SourceKind::Synthetic}) && session.select_pipeline("count"),
+            "Set up comparison source and left pipeline");
+    session.select_stage(2);
+    require(session.next_frame(), "Advance before enabling compare");
+    const int before_enable = *calls;
+    require(session.set_compare_mode(true) && session.compare_mode() && session.result(1)->frame.index == 1 && session.stage_index() == 2 &&
+                *calls == before_enable,
+            "Enabling comparison uses the current raw frame without rerunning the left pipeline");
+    require(session.select_pipeline("count", 1), "Choose independent right pipeline");
+    session.select_stage(1, 1);
+    require(session.stage_index() == 2 && session.stage_index(1) == 1, "Stage selections are independent");
+    require(session.next_frame() && session.result()->frame.index == 2 && session.result(1)->frame.index == 2 &&
+                session.result()->frame.timestamp_seconds == session.result(1)->frame.timestamp_seconds,
+            "Both pipelines advance together on the same media frame");
+    require(session.snapshot()->boxes[0].label == "3" && session.snapshot(1)->boxes[0].label == "2",
+            "Each pipeline has its own temporal state and start frame");
+    require(session.result()->frame.image.data()[0] == 30 && session.result(1)->frame.image.data()[0] == 30 &&
+                session.result(1)->snapshots[0].image.data()[0] == 0,
+            "Both pipelines receive independent copies of the same raw pixels");
+    const int before_browse = *calls;
+    require(session.previous_frame() && session.result(1)->frame.index == 1 && !session.can_previous_frame() && session.next_frame() &&
+                *calls == before_browse && session.stage_index() == 2 && session.stage_index(1) == 1,
+            "Bounded shared history restores both results without reprocessing or changing stages");
+    require(session.restart() && session.result()->frame.index == 0 && session.result(1)->frame.index == 0 && session.stage_index() == 2 &&
+                session.stage_index(1) == 1 && session.snapshot(1)->boxes[0].label == "1",
+            "Restart resets both pipelines and preserves both stage choices");
+    require(session.next_frame() && session.next_frame() && session.previous_frame(), "Browse to an older comparison frame");
+    require(session.select_pipeline("pass-through") && session.result(1)->frame.index == 1 && session.stage_index(1) == 1 &&
+                session.snapshot(1)->boxes[0].label == "2",
+            "Changing left pipeline preserves the right result and stage on an older frame");
+    require(session.next_frame() && session.result()->frame.index == 2 && session.result(1)->frame.index == 2 &&
+                session.snapshot(1)->boxes[0].label == "3",
+            "Unchanged stateful pipeline resumes from the displayed historical frame");
+    session.set_playing(true);
+    const std::uint64_t revision = session.revision();
+    require(!session.select_pipeline("fail-now", 1) && session.pipeline_id(1) == "count" && session.playing() &&
+                session.revision() == revision && session.result()->frame.index == 2 && session.result(1)->frame.index == 2,
+            "Failed comparison selection preserves both panes and playback");
+    require(!session.select_source({"Missing", "nonexistent-comparison.png", visionlab::app::SourceKind::Image}) &&
+                session.result()->frame.index == 2 && session.result(1)->frame.index == 2,
+            "Failed source selection preserves both comparison frames");
+    require(session.next_frame() && session.next_frame() && session.ended() && session.result(1)->frame.index == 4 &&
+                session.previous_frame() && !session.ended() && session.next_frame() && session.ended(),
+            "EOF and backward/forward navigation remain synchronized");
+    require(session.set_compare_mode(false) && !session.result(1) && session.result()->frame.index == 4 && session.ended(),
+            "Leaving comparison retains the left frame and EOF state");
+    require(session.set_compare_mode(true) && session.result(1)->frame.index == 4 && session.stage_index(1) == 1,
+            "Reentering compare retains the right pipeline and stage preference");
+    require(session.restart() && session.select_pipeline("fail-next", 1), "Set up a right-side processing failure");
+    require(!session.next_frame() && session.result()->frame.index == 0 && session.result(1)->frame.index == 0 && !session.playing() &&
+                !session.error().empty(),
+            "Processing failure never publishes mismatched left/right frames");
+    require(session.restart() && session.result(1)->frame.index == 0, "Restart recovers both panes after failure");
+    require(session.select_source({"Another synthetic", {}, visionlab::app::SourceKind::Synthetic}) && session.result()->frame.index == 0 &&
+                session.result(1)->frame.index == 0 && !session.can_previous_frame(),
+            "Changing the shared source resets both views together");
 }
 
 // The test owns only this newly created directory; never reuse or delete user data.
@@ -126,6 +232,7 @@ int main()
                          throw std::runtime_error("Factory failure");
                      }});
         test_frame_history(catalog, calls);
+        test_comparison();
         *calls = 0;
         visionlab::app::ViewerSession session(catalog, 3);
         require(session.select_source({"Synthetic", {}, visionlab::app::SourceKind::Synthetic}), "Initial source opens");
