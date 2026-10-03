@@ -72,3 +72,7 @@ HSV cleanup sample: run `python scripts/create_hsv_cleanup_sample.py` to create
 `data/hsv-cleanup-sample.bmp`. Practice 17 removes tiny orange spots and repairs
 a small hole and narrow gap. A larger orange patch survives; a blue distractor is rejected.
 The generated BMP stays untracked.
+
+Contours sample: run `python scripts/create_contours_sample.py` to create
+`data/contours-shapes-sample.bmp`. Practice 20 traces the outer boundaries of
+an orange rectangle, ring and triangle. The generated BMP stays untracked.

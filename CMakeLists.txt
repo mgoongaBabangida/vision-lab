@@ -31,7 +31,7 @@ if(VISIONLAB_WITH_OPENCV)
         src/opencv/erosion_stage.cpp src/opencv/dilation_stage.cpp src/opencv/hsv_color_stage.cpp
         src/opencv/adaptive_threshold_stage.cpp src/opencv/otsu_threshold_stage.cpp src/opencv/morphology_ex_stage.cpp
         src/opencv/gradient_direction_stage.cpp src/opencv/sobel_smoothing_stage.cpp src/opencv/canny_walkthrough.cpp
-        src/opencv/connected_components_stage.cpp)
+        src/opencv/connected_components_stage.cpp src/opencv/contours_stage.cpp)
     add_library(visionlab::opencv ALIAS visionlab_opencv)
     target_link_libraries(visionlab_opencv PUBLIC visionlab::core PRIVATE ${OpenCV_LIBS})
     target_include_directories(visionlab_opencv SYSTEM PRIVATE ${OpenCV_INCLUDE_DIRS})

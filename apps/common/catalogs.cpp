@@ -1,5 +1,6 @@
 #include "catalogs.hpp"
 #ifdef VISIONLAB_WITH_OPENCV
+#include "visionlab/opencv/contours_stage.hpp"
 #include "visionlab/opencv/connected_components_stage.hpp"
 #include "visionlab/opencv/canny_walkthrough.hpp"
 #include "visionlab/opencv/sobel_smoothing_stage.hpp"
@@ -327,6 +328,24 @@ PipelineCatalog::PipelineCatalog()
              pipeline.add(std::make_unique<MorphologyExStage>(MorphologyOperation::Opening));
              pipeline.add(std::make_unique<MorphologyExStage>(MorphologyOperation::Closing));
              pipeline.add(std::make_unique<ConnectedComponentsStage>());
+             return pipeline;
+         }});
+    add({"practice-19-component-area", "Practice 19 - Component area filter", []
+         {
+             Pipeline pipeline;
+             pipeline.add(std::make_unique<HsvColorStage>());
+             pipeline.add(std::make_unique<MorphologyExStage>(MorphologyOperation::Opening));
+             pipeline.add(std::make_unique<MorphologyExStage>(MorphologyOperation::Closing));
+             pipeline.add(std::make_unique<ConnectedComponentsStage>(100));
+             return pipeline;
+         }});
+    add({"practice-20-contours", "Practice 20 - External contours", []
+         {
+             Pipeline pipeline;
+             pipeline.add(std::make_unique<HsvColorStage>());
+             pipeline.add(std::make_unique<MorphologyExStage>(MorphologyOperation::Opening));
+             pipeline.add(std::make_unique<MorphologyExStage>(MorphologyOperation::Closing));
+             pipeline.add(std::make_unique<ContoursStage>());
              return pipeline;
          }});
 #endif

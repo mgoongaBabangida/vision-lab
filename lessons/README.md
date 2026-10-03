@@ -25,10 +25,12 @@ Its viewer label is now Sobel magnitude; the original CLI ID remains `practice-0
 [Practice 15 - Sobel smoothing](15-sobel-smoothing.md) is implemented and explored.
 [Practice 16 - Inside Canny](16-canny-walkthrough.md) is implemented and explored.
 [Practice 17 - HSV mask cleanup](17-hsv-cleanup.md) is implemented and explored.
-Current exercise: [Practice 18 - Connected components](18-connected-components.md), starting Lesson 3.
-Status: cleaned mask regions have colors, bounding boxes and pixel-area labels.
+[Practice 18 - Connected components](18-connected-components.md) is implemented and explored.
+[Practice 19 - Component area filtering](19-component-area.md) is implemented and explored.
+Current exercise: [Practice 20 - External contours](20-contours.md), Lesson 3.
+Status: inspect outer boundaries of cleaned mask regions as point sequences and outlines.
 
-The planned Lesson 2 practical review is complete. Next: component area filtering, then contours.
+The planned Lesson 2 practical review is complete. Next: contour measurements, then holes and hierarchy.
 
 For individual exercises, review the operation and build/run the affected target.
 Use focused checks for changed behavior; reserve full suites and repeated platform checks

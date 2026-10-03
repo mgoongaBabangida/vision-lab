@@ -1,4 +1,5 @@
 #include "visionlab/opencv/video_source.hpp"
+#include "visionlab/opencv/contours_stage.hpp"
 #include "visionlab/opencv/connected_components_stage.hpp"
 #include "visionlab/opencv/gradient_direction_stage.hpp"
 #include "visionlab/opencv/image_source.hpp"
@@ -582,6 +583,136 @@ void test_connected_components()
             "The HSV cleanup pipeline passes its mask to component extraction");
 }
 
+void test_component_area_filter()
+{
+    // A 10x10 filled square (area 100) and a 12x12 outline (area 44, box area 144).
+    visionlab::Frame frame{71, 3.5, visionlab::Image(40, 20)};
+    for (int y = 0; y < 20; ++y)
+    {
+        for (int x = 0; x < 40; ++x)
+        {
+            const bool square = x >= 2 && x < 12 && y >= 2 && y < 12;
+            const bool ring = x >= 22 && x <= 33 && y >= 2 && y <= 13 && (x == 22 || x == 33 || y == 2 || y == 13);
+            std::fill_n(frame.image.data() + y * frame.image.stride_bytes() + x * 3, 3, square || ring ? 255 : 0);
+        }
+    }
+    for (const int minimum : {44, 45, 100, 101})
+    {
+        visionlab::Pipeline pipeline;
+        pipeline.add(std::make_unique<visionlab::ConnectedComponentsStage>(minimum));
+        const visionlab::FrameResult result = pipeline.process(frame, true);
+        const std::size_t expected_count = minimum == 44 ? 2 : (minimum <= 100 ? 1 : 0);
+        require(result.boxes.size() == expected_count && result.snapshots.back().boxes.size() == expected_count,
+                "Area cutoff is inclusive and uses pixel area rather than bounding-box area");
+        require(result.frame.index == 71 && result.frame.timestamp_seconds == frame.timestamp_seconds &&
+                    std::equal(frame.image.data(), frame.image.data() + frame.image.size_bytes(), result.snapshots[0].image.data()),
+                "Area filtering preserves frame metadata and the source mask snapshot");
+        for (int y = 0; y < 20; ++y)
+        {
+            for (int x = 0; x < 40; ++x)
+            {
+                const std::size_t offset = y * frame.image.stride_bytes() + x * 3;
+                const bool expected = frame.image.data()[offset] != 0 && (x < 20 ? minimum <= 100 : minimum <= 44);
+                const bool colored =
+                    result.frame.image.data()[offset] || result.frame.image.data()[offset + 1] || result.frame.image.data()[offset + 2];
+                require(colored == expected, "Kept component shapes are unchanged; rejected components are entirely black");
+            }
+        }
+    }
+    for (const int invalid : {0, -1})
+    {
+        bool rejected = false;
+        try
+        {
+            visionlab::ConnectedComponentsStage stage(invalid);
+        }
+        catch (const std::invalid_argument&)
+        {
+            rejected = true;
+        }
+        require(rejected, "Nonpositive minimum areas are rejected");
+    }
+    const visionlab::app::PipelineCatalog catalog;
+    visionlab::Pipeline registered = catalog.create("practice-19-component-area");
+    visionlab::Frame orange{0, 0.0, visionlab::Image(40, 20)};
+    for (int y = 2; y < 12; ++y)
+    {
+        for (int x = 2; x < 32; ++x)
+        {
+            if (x < 12 || (x >= 22 && x < 27 && y < 7))
+            {
+                const std::size_t offset = y * orange.image.stride_bytes() + x * 3;
+                orange.image.data()[offset + 1] = 140;
+                orange.image.data()[offset + 2] = 255;
+            }
+        }
+    }
+    const visionlab::FrameResult composed = registered.process(orange, true);
+    require(composed.snapshots.size() == 5 && composed.boxes.size() == 1 && composed.boxes[0].label.find("area=100") != std::string::npos,
+            "Practice 19 keeps the 100-pixel region and rejects the separate 25-pixel region");
+}
+
+void test_external_contours()
+{
+    // An isolated solid rectangle and a hollow rectangle with a nested foreground island.
+    visionlab::Frame frame{81, 4.0, visionlab::Image(30, 20)};
+    for (int y = 0; y < 20; ++y)
+    {
+        for (int x = 0; x < 30; ++x)
+        {
+            const bool rectangle = x >= 2 && x <= 7 && y >= 3 && y <= 10;
+            const bool outer = x >= 14 && x <= 26 && y >= 2 && y <= 16;
+            const bool hole = x >= 17 && x <= 23 && y >= 5 && y <= 13;
+            const bool island = x == 20 && y == 9;
+            std::fill_n(frame.image.data() + y * frame.image.stride_bytes() + x * 3, 3, rectangle || (outer && !hole) || island ? 255 : 0);
+        }
+    }
+    visionlab::Pipeline pipeline;
+    pipeline.add(std::make_unique<visionlab::ContoursStage>());
+    const visionlab::FrameResult result = pipeline.process(frame, true);
+    require(result.snapshots.size() == 2 && result.frame.index == 81 && result.frame.timestamp_seconds == frame.timestamp_seconds &&
+                result.boxes.empty(),
+            "Contours preserve frame identity and do not overlay bounding boxes");
+    require(std::equal(frame.image.data(), frame.image.data() + frame.image.size_bytes(), result.snapshots[0].image.data()),
+            "Contours preserve the source mask snapshot");
+    for (int y = 0; y < 20; ++y)
+    {
+        for (int x = 0; x < 30; ++x)
+        {
+            const bool rectangle = x >= 2 && x <= 7 && y >= 3 && y <= 10 && (x == 2 || x == 7 || y == 3 || y == 10);
+            const bool ring = x >= 14 && x <= 26 && y >= 2 && y <= 16 && (x == 14 || x == 26 || y == 2 || y == 16);
+            const std::size_t offset = y * frame.image.stride_bytes() + x * 3;
+            require(result.frame.image.data()[offset] == (rectangle || ring ? 80 : 0) &&
+                        result.frame.image.data()[offset + 1] == (rectangle || ring ? 230 : 0) &&
+                        result.frame.image.data()[offset + 2] == (rectangle || ring ? 255 : 0),
+                    "External contours draw complete outer outlines but omit interiors, holes and nested islands");
+        }
+    }
+    const visionlab::FrameResult blank = pipeline.process({82, 4.5, visionlab::Image(9, 7)}, true);
+    require(std::all_of(blank.frame.image.data(), blank.frame.image.data() + blank.frame.image.size_bytes(),
+                        [](std::uint8_t value)
+                        {
+                            return value == 0;
+                        }),
+            "An empty mask has no contour pixels or stale output");
+    const visionlab::app::PipelineCatalog catalog;
+    visionlab::Pipeline registered = catalog.create("practice-20-contours");
+    visionlab::Frame orange{0, 0.0, visionlab::Image(20, 20)};
+    for (int y = 5; y < 15; ++y)
+    {
+        for (int x = 5; x < 15; ++x)
+        {
+            const std::size_t offset = y * orange.image.stride_bytes() + x * 3;
+            orange.image.data()[offset + 1] = 140;
+            orange.image.data()[offset + 2] = 255;
+        }
+    }
+    const visionlab::FrameResult composed = registered.process(orange, true);
+    require(composed.snapshots.size() == 5 && composed.frame.image.data()[5 * orange.image.stride_bytes() + 5 * 3] == 80 &&
+                composed.frame.image.data()[10 * orange.image.stride_bytes() + 10 * 3] == 0,
+            "Practice 20 extracts outlines directly from its cleaned HSV mask");
+}
+
 } // namespace
 
 int main()
@@ -605,6 +736,8 @@ int main()
         test_canny_walkthrough();
         test_hsv_cleanup();
         test_connected_components();
+        test_component_area_filter();
+        test_external_contours();
         cv::VideoWriter writer(fixture.string(), cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), 25.0, cv::Size(32, 24));
         require(writer.isOpened(), "MJPEG writer unavailable; cannot generate video test fixture");
         writer.write(cv::Mat(24, 32, CV_8UC3, cv::Scalar(0, 0, 255)));
