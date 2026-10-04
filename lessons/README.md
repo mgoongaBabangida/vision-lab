@@ -27,10 +27,18 @@ Its viewer label is now Sobel magnitude; the original CLI ID remains `practice-0
 [Practice 17 - HSV mask cleanup](17-hsv-cleanup.md) is implemented and explored.
 [Practice 18 - Connected components](18-connected-components.md) is implemented and explored.
 [Practice 19 - Component area filtering](19-component-area.md) is implemented and explored.
-Current exercise: [Practice 20 - External contours](20-contours.md), Lesson 3.
-Status: inspect outer boundaries of cleaned mask regions as point sequences and outlines.
+[Practice 20 - External contours](20-contours.md) is implemented and explored.
+[Practice 21 - Contour measurements](21-contour-measurements.md) is implemented and explored.
+[Practice 22 - Contour hierarchy](22-contour-hierarchy.md) is implemented and explored.
+[Practice 23 - Rotated rectangle](23-rotated-rectangle.md) is implemented and explored.
+[Practice 24 - Moments and centroid](24-moments.md) is implemented and explored.
+[Practice 25 - Classical detector](25-classical-detector.md) is implemented and explored.
+[Practice 26 - Harris corners](26-harris.md) is implemented and explored.
+[Practice 27 - SIFT and ORB matching](27-feature-matching.md) is implemented and explored.
+Current exercise: [Practice 28 - Nearest-neighbor tracker](28-proto-tracker.md).
+Status: classical detections gain persistent IDs across consecutive frames.
 
-The planned Lesson 2 practical review is complete. Next: contour measurements, then holes and hierarchy.
+Circularity is applied in the detector. Shi-Tomasi corners and polygon approximation remain available for later exercises.
 
 For individual exercises, review the operation and build/run the affected target.
 Use focused checks for changed behavior; reserve full suites and repeated platform checks

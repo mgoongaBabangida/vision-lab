@@ -1,3 +1,4 @@
+#include "visionlab/nearest_neighbor_stage.hpp"
 #include "visionlab/pipeline.hpp"
 #include "visionlab/source.hpp"
 #include <cmath>
@@ -72,6 +73,32 @@ public:
         throw std::runtime_error("stage failure");
     }
 };
+
+void test_nearest_neighbor()
+{
+    rejects(
+        []
+        {
+            visionlab::NearestNeighborStage invalid(0);
+        });
+    visionlab::NearestNeighborStage tracker(20);
+    const auto run = [&](std::uint64_t index, std::vector<visionlab::BoxOverlay> boxes)
+    {
+        visionlab::FrameResult result{{index, std::nullopt, visionlab::Image(200, 100)}, {}, std::move(boxes), {}};
+        tracker.process(result);
+        return result.boxes;
+    };
+    const std::vector<visionlab::BoxOverlay> first = run(0, {{10, 10, 10, 10, ""}, {100, 10, 10, 10, ""}});
+    require(first[0].label == "ID 1 (new)" && first[1].label == "ID 2 (new)", "Initial unique IDs");
+    const std::vector<visionlab::BoxOverlay> reordered = run(1, {{98, 10, 10, 10, ""}, {12, 10, 10, 10, ""}});
+    require(reordered[0].label == "ID 2 (matched)" && reordered[1].label == "ID 1 (matched)", "IDs follow position, not detection order");
+    const std::vector<visionlab::BoxOverlay> competition = run(2, {{13, 10, 10, 10, ""}, {16, 10, 10, 10, ""}, {160, 10, 10, 10, ""}});
+    require(competition[0].label == "ID 1 (matched)" && competition[1].label == "ID 3 (new)" && competition[2].label == "ID 4 (new)",
+            "One-to-one matching and distance gate");
+    require(run(3, {}).empty(), "Empty frame retires tracks");
+    require(run(4, {{13, 10, 10, 10, ""}})[0].label == "ID 5 (new)", "Missing objects do not reuse retired IDs");
+    require(run(0, {{13, 10, 10, 10, ""}})[0].label == "ID 1 (new)", "Rewinding resets temporal state");
+}
 
 } // namespace
 
@@ -148,6 +175,7 @@ int main()
             propagated = true;
         }
         require(propagated, "A stage failure must reach the frontend");
+        test_nearest_neighbor();
         std::cout << "Core contracts passed\n";
         return 0;
     }

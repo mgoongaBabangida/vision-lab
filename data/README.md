@@ -76,3 +76,38 @@ The generated BMP stays untracked.
 Contours sample: run `python scripts/create_contours_sample.py` to create
 `data/contours-shapes-sample.bmp`. Practice 20 traces the outer boundaries of
 an orange rectangle, ring and triangle. The generated BMP stays untracked.
+
+Contour hierarchy sample: run `python scripts/create_hierarchy_sample.py` to create
+`data/contour-hierarchy-sample.bmp`. Practice 22 shows an outer ring, its hole,
+a nested island with another hole, and a separate disk. The BMP stays untracked.
+
+Rotated rectangles sample: run `python scripts/create_rotated_sample.py` to create
+`data/rotated-rectangles-sample.bmp`. Practice 23 compares enclosing rectangles
+on horizontal and tilted orange shapes. The generated BMP stays untracked.
+
+Moments sample: run `python scripts/create_moments_sample.py` to create
+`data/moments-centroid-sample.bmp`. Practice 24 compares area centroids and
+box centers on a rectangle, right triangle and L shape. The BMP stays untracked.
+
+Classical detector sample: run `python scripts/create_detector_sample.py` to create
+`data/classical-detector-sample.bmp`. Practice 25 detects the large orange disk
+among square, ellipse, small disk, ring and wrong-color distractors. The BMP stays untracked.
+
+Harris sample: run `python scripts/create_harris_sample.py` to create
+`data/harris-corners-sample.bmp`. Practice 26 compares corner responses on a
+rectangle, triangle, circle and checkerboard. The generated BMP stays untracked.
+
+## Feature matching sample
+
+Run `python scripts/create_feature_matching_sample.py` to create
+`feature-matching-sample.bmp`, deterministic varied texture made locally with no
+external assets or dependencies. The script refuses to overwrite an existing file.
+Use it with Practice 27 SIFT/ORB; a textured real photograph also works.
+
+## Proto-tracker sample
+
+Run `python scripts/create_tracker_sample.py` to generate `tracker-sample.avi`
+(180 frames, 30 FPS, about 40 MiB). Three orange circles move; the bottom circle
+disappears at frame 70 and returns at frame 100. Use Practice 28 to see persistent
+IDs and a new ID after the interruption. Standard library only, no external assets.
+The generator refuses to overwrite an existing file.

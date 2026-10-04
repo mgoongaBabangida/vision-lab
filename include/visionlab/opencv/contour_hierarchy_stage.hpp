@@ -5,16 +5,11 @@
 namespace visionlab
 {
 
-// Consumes a BGR binary mask and displays only its outermost contours.
-class ContoursStage final : public Stage
+class ContourHierarchyStage final : public Stage
 {
 public:
-    explicit ContoursStage(bool show_measurements = false);
     std::string_view name() const noexcept override;
     void process(FrameResult& result) override;
-
-private:
-    bool show_measurements_;
 };
 
 } // namespace visionlab

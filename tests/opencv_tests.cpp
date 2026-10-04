@@ -1,4 +1,9 @@
+#include "visionlab/opencv/feature_matching.hpp"
+#include <opencv2/imgproc.hpp>
 #include "visionlab/opencv/video_source.hpp"
+#include "visionlab/opencv/moments_stage.hpp"
+#include "visionlab/opencv/rotated_rectangle_stage.hpp"
+#include "visionlab/opencv/contour_hierarchy_stage.hpp"
 #include "visionlab/opencv/contours_stage.hpp"
 #include "visionlab/opencv/connected_components_stage.hpp"
 #include "visionlab/opencv/gradient_direction_stage.hpp"
@@ -713,6 +718,474 @@ void test_external_contours()
             "Practice 20 extracts outlines directly from its cleaned HSV mask");
 }
 
+void test_contour_measurements()
+{
+    visionlab::Frame frame{91, 5.0, visionlab::Image(40, 20)};
+    for (int y = 2; y <= 11; ++y)
+    {
+        for (int x = 2; x <= 31; ++x)
+        {
+            const bool square = x <= 11;
+            const bool ring = x >= 22 && (x == 22 || x == 31 || y == 2 || y == 11);
+            if (square || ring)
+            {
+                std::fill_n(frame.image.data() + y * frame.image.stride_bytes() + x * 3, 3, 255);
+            }
+        }
+    }
+    std::fill_n(frame.image.data() + 16 * frame.image.stride_bytes() + 36 * 3, 3, 255);
+    visionlab::Pipeline pipeline;
+    pipeline.add(std::make_unique<visionlab::ContoursStage>(true));
+    const visionlab::FrameResult result = pipeline.process(frame, true);
+    require(result.boxes.size() == 3 && result.snapshots.size() == 2 && result.snapshots[0].boxes.empty() &&
+                result.snapshots[1].boxes.size() == 3 && result.frame.index == 91 &&
+                result.frame.timestamp_seconds == frame.timestamp_seconds,
+            "Contour measurements expose boxes in the final snapshot and preserve frame metadata");
+    for (const visionlab::BoxOverlay& box : result.boxes)
+    {
+        if (box.x == 36)
+        {
+            require(box.y == 16 && box.width == 1 && box.height == 1 && box.label == "A=0.0 px^2\nP=0.0 px",
+                    "A point contour has zero geometric area and length but a one-pixel box");
+        }
+        else
+        {
+            require((box.x == 2 || box.x == 22) && box.y == 2 && box.width == 10 && box.height == 10 &&
+                        box.label == "A=81.0 px^2\nP=36.0 px",
+                    "Solid and hollow 10x10 shapes have the same external contour measurements; closure includes all four sides");
+        }
+    }
+    require(std::equal(frame.image.data(), frame.image.data() + frame.image.size_bytes(), result.snapshots[0].image.data()),
+            "Measurement overlays preserve the original source mask");
+    const visionlab::FrameResult blank = pipeline.process({92, 5.5, visionlab::Image(5, 7)}, true);
+    require(blank.boxes.empty() && result.snapshots[1].boxes.size() == 3, "Empty frames do not retain old measurement overlays");
+    const visionlab::app::PipelineCatalog catalog;
+    visionlab::Pipeline registered = catalog.create("practice-21-contour-measurements");
+    visionlab::Frame orange{0, 0.0, visionlab::Image(20, 20)};
+    for (int y = 5; y < 15; ++y)
+    {
+        for (int x = 5; x < 15; ++x)
+        {
+            const std::size_t offset = y * orange.image.stride_bytes() + x * 3;
+            orange.image.data()[offset + 1] = 140;
+            orange.image.data()[offset + 2] = 255;
+        }
+    }
+    const visionlab::FrameResult composed = registered.process(orange, true);
+    require(composed.snapshots.size() == 5 && composed.boxes.size() == 1 && composed.boxes[0].label == "A=81.0 px^2\nP=36.0 px",
+            "Practice 21 measures the cleaned HSV mask");
+}
+
+void test_contour_hierarchy()
+{
+    visionlab::Frame frame{101, 6.0, visionlab::Image(50, 45)};
+    for (int y = 0; y < 45; ++y)
+    {
+        for (int x = 0; x < 50; ++x)
+        {
+            const bool outer = x >= 2 && x <= 40 && y >= 2 && y <= 40;
+            const bool hole = x >= 8 && x <= 34 && y >= 8 && y <= 34;
+            const bool island = x >= 14 && x <= 28 && y >= 14 && y <= 28;
+            const bool inner_hole = x >= 19 && x <= 23 && y >= 19 && y <= 23;
+            const bool separate = x == 46 && y == 2;
+            std::fill_n(frame.image.data() + y * frame.image.stride_bytes() + x * 3, 3,
+                        (outer && !hole) || (island && !inner_hole) || separate ? 255 : 0);
+        }
+    }
+    visionlab::Pipeline pipeline;
+    pipeline.add(std::make_unique<visionlab::ContourHierarchyStage>());
+    const visionlab::FrameResult result = pipeline.process(frame, true);
+    require(result.boxes.size() == 5 && result.snapshots.size() == 2 && result.snapshots[0].boxes.empty() &&
+                result.snapshots[1].boxes.size() == 5 && result.frame.index == 101 &&
+                result.frame.timestamp_seconds == frame.timestamp_seconds,
+            "Contour tree exposes nested holes, islands and separate roots with owned overlays");
+    std::array<int, 4> nested_indices{-1, -1, -1, -1};
+    const std::array<float, 4> left{2, 7, 14, 18};
+    for (std::size_t index = 0; index < result.boxes.size(); ++index)
+    {
+        for (std::size_t depth = 0; depth < left.size(); ++depth)
+        {
+            if (result.boxes[index].x == left[depth])
+            {
+                nested_indices[depth] = static_cast<int>(index);
+            }
+        }
+    }
+    for (std::size_t depth = 0; depth < nested_indices.size(); ++depth)
+    {
+        require(nested_indices[depth] >= 0, "Every expected nesting level was found");
+        const int index = nested_indices[depth];
+        const int parent = depth == 0 ? -1 : nested_indices[depth - 1];
+        const std::string role = depth % 2 != 0 ? "hole" : (depth == 0 ? "outer" : "island");
+        const std::string expected =
+            "#" + std::to_string(index) + " " + role + " d=" + std::to_string(depth) + "\nparent=" + std::to_string(parent);
+        require(result.boxes[index].label == expected, "Labels identify the actual parent chain, without assuming contour order");
+    }
+    for (const visionlab::BoxOverlay& box : result.boxes)
+    {
+        if (box.x == 46)
+        {
+            require(box.label.find("outer d=0\nparent=-1") != std::string::npos, "The independent contour is another root");
+        }
+    }
+    const std::size_t outer_pixel = 10 * frame.image.stride_bytes() + 2 * 3;
+    const std::size_t hole_pixel = 10 * frame.image.stride_bytes() + 7 * 3;
+    const std::size_t island_pixel = 20 * frame.image.stride_bytes() + 14 * 3;
+    require(result.frame.image.data()[outer_pixel] == 80 && result.frame.image.data()[hole_pixel] == 255 &&
+                result.frame.image.data()[island_pixel] == 220,
+            "Outer, hole and island contours receive distinct depth colors");
+    require(std::equal(frame.image.data(), frame.image.data() + frame.image.size_bytes(), result.snapshots[0].image.data()),
+            "Hierarchy visualization preserves the input snapshot");
+    const visionlab::FrameResult blank = pipeline.process({102, 6.5, visionlab::Image(9, 7)}, true);
+    require(blank.boxes.empty() && std::all_of(blank.frame.image.data(), blank.frame.image.data() + blank.frame.image.size_bytes(),
+                                               [](std::uint8_t value)
+                                               {
+                                                   return value == 0;
+                                               }),
+            "Empty masks produce no stale contours or hierarchy overlays");
+    const visionlab::app::PipelineCatalog catalog;
+    visionlab::Pipeline registered = catalog.create("practice-22-contour-hierarchy");
+    visionlab::Frame orange{0, 0.0, visionlab::Image(20, 20)};
+    for (int y = 5; y < 15; ++y)
+    {
+        for (int x = 5; x < 15; ++x)
+        {
+            const std::size_t offset = y * orange.image.stride_bytes() + x * 3;
+            orange.image.data()[offset + 1] = 140;
+            orange.image.data()[offset + 2] = 255;
+        }
+    }
+    const visionlab::FrameResult composed = registered.process(orange, true);
+    require(composed.snapshots.size() == 5 && composed.boxes.size() == 1 && composed.boxes[0].label == "#0 outer d=0\nparent=-1",
+            "Practice 22 extracts hierarchy from the cleaned HSV mask");
+}
+
+void test_rotated_rectangle()
+{
+    // A diamond has a 21x21 pixel axis box, but its minimum rectangle follows the four diagonal sides.
+    visionlab::Frame frame{111, 7.0, visionlab::Image(41, 41)};
+    for (int y = 0; y < 41; ++y)
+    {
+        for (int x = 0; x < 41; ++x)
+        {
+            std::fill_n(frame.image.data() + y * frame.image.stride_bytes() + x * 3, 3,
+                        std::abs(x - 20) + std::abs(y - 20) <= 10 ? 255 : 0);
+        }
+    }
+    visionlab::Pipeline pipeline;
+    pipeline.add(std::make_unique<visionlab::RotatedRectangleStage>());
+    const visionlab::FrameResult result = pipeline.process(frame, true);
+    require(result.boxes.size() == 1 && result.boxes[0].x == 10 && result.boxes[0].y == 10 && result.boxes[0].width == 21 &&
+                result.boxes[0].height == 21 && result.boxes[0].label.find("rot 14.1x14.1") == 0,
+            "The diagonal box has side length sqrt(200), smaller than its axis-aligned enclosure");
+    for (const std::array<int, 2>& point : std::array<std::array<int, 2>, 4>{{{15, 15}, {25, 15}, {25, 25}, {15, 25}}})
+    {
+        const std::size_t offset = point[1] * frame.image.stride_bytes() + point[0] * 3;
+        require(result.frame.image.data()[offset] == 255 && result.frame.image.data()[offset + 1] == 230 &&
+                    result.frame.image.data()[offset + 2] == 40,
+                "All four rotated sides are drawn, including the closing segment");
+    }
+    require(result.frame.image.data()[10 * frame.image.stride_bytes() + 10 * 3] == 0 &&
+                result.frame.image.data()[20 * frame.image.stride_bytes() + 20 * 3] == 45,
+            "The empty axis-box corner stays black and the actual region remains visible in dim gray");
+    require(result.frame.index == 111 && result.frame.timestamp_seconds == frame.timestamp_seconds && result.snapshots.size() == 2 &&
+                result.snapshots[0].boxes.empty() && result.snapshots[1].boxes.size() == 1 &&
+                std::equal(frame.image.data(), frame.image.data() + frame.image.size_bytes(), result.snapshots[0].image.data()),
+            "Rotated fitting preserves metadata and owned mask snapshots");
+    visionlab::Frame point{112, 7.5, visionlab::Image(9, 9)};
+    std::fill_n(point.image.data() + 4 * point.image.stride_bytes() + 4 * 3, 3, 255);
+    const visionlab::FrameResult degenerate = pipeline.process(point, true);
+    require(degenerate.boxes.size() == 1 && degenerate.boxes[0].width == 1 && degenerate.boxes[0].height == 1 &&
+                degenerate.boxes[0].label.find("rot 0.0x0.0") == 0,
+            "Single points produce a drawable degenerate rotated rectangle");
+    const visionlab::FrameResult blank = pipeline.process({113, 8.0, visionlab::Image(7, 5)}, true);
+    require(blank.boxes.empty() && std::all_of(blank.frame.image.data(), blank.frame.image.data() + blank.frame.image.size_bytes(),
+                                               [](std::uint8_t value)
+                                               {
+                                                   return value == 0;
+                                               }),
+            "Empty frames have no stale fitted boxes");
+    const visionlab::app::PipelineCatalog catalog;
+    visionlab::Pipeline registered = catalog.create("practice-23-rotated-rectangle");
+    visionlab::Frame orange{0, 0.0, visionlab::Image(20, 20)};
+    for (int y = 5; y < 15; ++y)
+    {
+        for (int x = 5; x < 15; ++x)
+        {
+            const std::size_t offset = y * orange.image.stride_bytes() + x * 3;
+            orange.image.data()[offset + 1] = 140;
+            orange.image.data()[offset + 2] = 255;
+        }
+    }
+    const visionlab::FrameResult composed = registered.process(orange, true);
+    require(composed.snapshots.size() == 5 && composed.boxes.size() == 1 && composed.boxes[0].label.find("rot 9.0x9.0") == 0,
+            "Practice 23 fits rectangles to the cleaned HSV mask");
+}
+
+void test_moments_centroid()
+{
+    visionlab::Pipeline pipeline;
+    pipeline.add(std::make_unique<visionlab::MomentsStage>());
+    for (const int shift : {0, 5})
+    {
+        // Triangle vertices (10,10), (70,10), (10,70): area 1800, centroid (30,30), box center (40,40).
+        visionlab::Frame frame{121, 8.0, visionlab::Image(90, 90)};
+        for (int y = 10 + shift; y <= 70 + shift; ++y)
+        {
+            for (int x = 10 + shift; x <= 70 + shift; ++x)
+            {
+                if (x + y <= 80 + 2 * shift)
+                {
+                    std::fill_n(frame.image.data() + y * frame.image.stride_bytes() + x * 3, 3, 255);
+                }
+            }
+        }
+        const visionlab::FrameResult result = pipeline.process(frame, true);
+        const std::string center = shift == 0 ? "30.0,30.0" : "35.0,35.0";
+        require(result.boxes.size() == 1 && result.boxes[0].label == "C=(" + center + ")\nm00=1800.0",
+                "Contour centroid follows the known triangle geometry and translates without changing area");
+        const std::size_t centroid = (30 + shift) * frame.image.stride_bytes() + (30 + shift) * 3;
+        const std::size_t box_circle = (40 + shift) * frame.image.stride_bytes() + (46 + shift) * 3;
+        require(result.frame.image.data()[centroid] == 40 && result.frame.image.data()[centroid + 2] == 255 &&
+                    result.frame.image.data()[box_circle] == 255 && result.frame.image.data()[box_circle + 2] == 40,
+                "Yellow centroid and cyan box-center markers are drawn at distinct expected positions");
+        require(result.frame.index == 121 && result.frame.timestamp_seconds == frame.timestamp_seconds && result.snapshots.size() == 2 &&
+                    result.snapshots[0].boxes.empty() && result.snapshots[1].boxes.size() == 1 &&
+                    std::equal(frame.image.data(), frame.image.data() + frame.image.size_bytes(), result.snapshots[0].image.data()),
+                "Moments visualization preserves frame metadata and the owned source mask");
+    }
+    for (const int length : {1, 7})
+    {
+        visionlab::Frame frame{122, 8.5, visionlab::Image(21, 21)};
+        for (int x = 7; x < 7 + length; ++x)
+        {
+            std::fill_n(frame.image.data() + 10 * frame.image.stride_bytes() + x * 3, 3, 255);
+        }
+        const visionlab::FrameResult result = pipeline.process(frame, true);
+        require(result.boxes.size() == 1 && result.boxes[0].label == "centroid undefined\nm00=0.0",
+                "Point and line contours safely report undefined area centroids");
+    }
+    const visionlab::FrameResult blank = pipeline.process({123, 9.0, visionlab::Image(7, 5)}, true);
+    require(blank.boxes.empty() && std::all_of(blank.frame.image.data(), blank.frame.image.data() + blank.frame.image.size_bytes(),
+                                               [](std::uint8_t value)
+                                               {
+                                                   return value == 0;
+                                               }),
+            "Blank frames do not retain moments markers or labels");
+    const visionlab::app::PipelineCatalog catalog;
+    visionlab::Pipeline registered = catalog.create("practice-24-moments");
+    visionlab::Frame orange{0, 0.0, visionlab::Image(30, 30)};
+    for (int y = 5; y < 15; ++y)
+    {
+        for (int x = 5; x < 15; ++x)
+        {
+            const std::size_t offset = y * orange.image.stride_bytes() + x * 3;
+            orange.image.data()[offset + 1] = 140;
+            orange.image.data()[offset + 2] = 255;
+        }
+    }
+    const visionlab::FrameResult composed = registered.process(orange, true);
+    require(composed.snapshots.size() == 5 && composed.boxes.size() == 1 && composed.boxes[0].label == "C=(9.5,9.5)\nm00=81.0",
+            "Practice 24 measures contour area moments, not binary pixel-count moments");
+}
+
+void test_classical_detector()
+{
+    visionlab::Frame frame{131, 10.0, visionlab::Image(520, 320)};
+    for (int y = 0; y < 320; ++y)
+    {
+        for (int x = 0; x < 520; ++x)
+        {
+            const bool disk = (x - 85) * (x - 85) + (y - 90) * (y - 90) <= 48 * 48;
+            const bool square = x >= 200 && x <= 280 && y >= 50 && y <= 130;
+            const double ex = (x - 420) / 65.0;
+            const double ey = (y - 90) / 22.0;
+            const bool ellipse = ex * ex + ey * ey <= 1.0;
+            const bool small = (x - 85) * (x - 85) + (y - 245) * (y - 245) <= 7 * 7;
+            const int radius = (x - 240) * (x - 240) + (y - 245) * (y - 245);
+            const bool ring = radius >= 24 * 24 && radius <= 48 * 48;
+            const bool green = (x - 420) * (x - 420) + (y - 245) * (y - 245) <= 48 * 48;
+            const std::array<std::uint8_t, 3> color =
+                green ? std::array<std::uint8_t, 3>{0, 200, 0}
+                      : (disk || square || ellipse || small || ring ? std::array<std::uint8_t, 3>{0, 140, 255}
+                                                                    : std::array<std::uint8_t, 3>{25, 25, 25});
+            std::copy(color.begin(), color.end(), frame.image.data() + y * frame.image.stride_bytes() + x * 3);
+        }
+    }
+    const visionlab::app::PipelineCatalog catalog;
+    visionlab::Pipeline pipeline = catalog.create("practice-25-classical-detector");
+    const visionlab::FrameResult result = pipeline.process(frame, true);
+    require(result.snapshots.size() == 6 && result.snapshots[4].boxes.size() == 5 && result.boxes.size() == 1,
+            "Detector exposes all stages, excludes green from candidates, and accepts exactly one target");
+    int passed = 0;
+    int small = 0;
+    int holes = 0;
+    int not_round = 0;
+    for (const visionlab::BoxOverlay& box : result.snapshots[4].boxes)
+    {
+        passed += box.label.find("PASS") == 0;
+        small += box.label.find("too small") == 0;
+        holes += box.label.find("has hole") == 0;
+        not_round += box.label.find("not round") == 0;
+    }
+    require(passed == 1 && small == 1 && holes == 1 && not_round == 2, "Each distractor receives the expected rejection reason");
+    const visionlab::BoxOverlay& detection = result.boxes[0];
+    require(detection.x < 85 && detection.x + detection.width > 85 && detection.y < 90 && detection.y + detection.height > 90 &&
+                detection.label.find("orange round object") == 0,
+            "The accepted box encloses the intended disk");
+    const std::size_t centroid = 90 * frame.image.stride_bytes() + 85 * 3;
+    require(result.frame.image.data()[centroid] == 255 && result.frame.image.data()[centroid + 1] == 255 &&
+                result.frame.image.data()[centroid + 2] == 255,
+            "Detection draws the moment centroid on the source");
+    const std::size_t square_center = 90 * frame.image.stride_bytes() + 240 * 3;
+    require(result.frame.image.data()[square_center + 1] == 140 && result.frame.image.data()[square_center + 2] == 255 &&
+                std::equal(frame.image.data(), frame.image.data() + frame.image.size_bytes(), result.snapshots[4].image.data()) &&
+                result.frame.index == 131 && result.frame.timestamp_seconds == frame.timestamp_seconds,
+            "Candidate and detection views restore original colors and preserve frame metadata");
+    visionlab::Pipeline independent = catalog.create("practice-25-classical-detector");
+    const visionlab::FrameResult headless = independent.process(frame, false);
+    require(
+        headless.snapshots.empty() && headless.boxes.size() == 1 &&
+            std::equal(result.frame.image.data(), result.frame.image.data() + result.frame.image.size_bytes(), headless.frame.image.data()),
+        "Headless and inspected detector outputs agree without relying on source snapshots");
+    const visionlab::FrameResult blank = pipeline.process({132, 10.5, visionlab::Image(13, 11)}, true);
+    require(blank.boxes.empty() && blank.snapshots[4].boxes.empty() && result.snapshots[4].boxes.size() == 5 &&
+                std::all_of(blank.frame.image.data(), blank.frame.image.data() + blank.frame.image.size_bytes(),
+                            [](std::uint8_t pixel)
+                            {
+                                return pixel == 0;
+                            }),
+            "New empty frames clear working state and restore the new source at its new dimensions");
+}
+
+void test_harris_pipeline()
+{
+    const visionlab::app::PipelineCatalog catalog;
+    visionlab::Pipeline pipeline = catalog.create("practice-26-harris");
+    visionlab::Frame frame{141, 11.0, visionlab::Image(90, 80)};
+    for (int y = 20; y <= 60; ++y)
+    {
+        for (int x = 20; x <= 70; ++x)
+        {
+            std::fill_n(frame.image.data() + y * frame.image.stride_bytes() + x * 3, 3, 230);
+        }
+    }
+    const visionlab::FrameResult result = pipeline.process(frame, true);
+    require(result.snapshots.size() == 4 && result.boxes.size() == 4 && result.frame.index == 141 &&
+                result.frame.timestamp_seconds == frame.timestamp_seconds,
+            "A clean rectangle yields four selected Harris corners and all intermediate views");
+    for (const std::array<int, 2>& expected : std::array<std::array<int, 2>, 4>{{{20, 20}, {70, 20}, {20, 60}, {70, 60}}})
+    {
+        int nearby = 0;
+        for (const visionlab::BoxOverlay& box : result.boxes)
+        {
+            nearby += std::abs(box.x + 3 - expected[0]) <= 2 && std::abs(box.y + 3 - expected[1]) <= 2;
+        }
+        require(nearby == 1, "Each geometric corner has exactly one nearby marker after suppression");
+    }
+    const visionlab::Image& response = result.snapshots[2].image;
+    const std::size_t edge = 40 * response.stride_bytes() + 20 * 3;
+    require(response.data()[edge] > 0 && response.data()[edge + 2] == 0,
+            "The signed Harris heatmap shows a straight edge as negative blue");
+    require(std::equal(frame.image.data(), frame.image.data() + frame.image.size_bytes(), result.frame.image.data()) &&
+                result.snapshots[1].boxes.empty() && result.snapshots[2].boxes.empty(),
+            "The corner view restores source pixels; heatmap and grayscale have no stale markers");
+    visionlab::Pipeline independent = catalog.create("practice-26-harris");
+    const visionlab::FrameResult headless = independent.process(frame, false);
+    require(headless.snapshots.empty() && headless.boxes.size() == result.boxes.size(), "Harris works without captured snapshots");
+    for (std::size_t index = 0; index < result.boxes.size(); ++index)
+    {
+        require(headless.boxes[index].x == result.boxes[index].x && headless.boxes[index].y == result.boxes[index].y,
+                "Independent Harris factories select deterministic points");
+    }
+    visionlab::Frame straight{142, 11.5, visionlab::Image(50, 50)};
+    for (int y = 0; y < 50; ++y)
+    {
+        for (int x = 25; x < 50; ++x)
+        {
+            std::fill_n(straight.image.data() + y * straight.image.stride_bytes() + x * 3, 3, 255);
+        }
+    }
+    require(pipeline.process(straight, false).boxes.empty(), "An uninterrupted straight edge does not produce Harris corners");
+    const visionlab::FrameResult blank = pipeline.process({143, 12.0, visionlab::Image(7, 5)}, true);
+    require(blank.boxes.empty() &&
+                std::all_of(blank.snapshots[2].image.data(), blank.snapshots[2].image.data() + blank.snapshots[2].image.size_bytes(),
+                            [](std::uint8_t value)
+                            {
+                                return value == 0;
+                            }),
+            "A flat frame has a black response and no corners, even after previous detections and a size change");
+}
+
+void test_feature_matching()
+{
+    visionlab::Frame frame{29, 1.25, visionlab::Image(480, 320)};
+    cv::Mat texture(320, 480, CV_8UC3, frame.image.data(), frame.image.stride_bytes());
+    texture.setTo(cv::Scalar(25, 25, 25));
+    cv::RNG random(12345);
+    for (int index = 0; index < 180; ++index)
+    {
+        const cv::Point center(random.uniform(30, 450), random.uniform(30, 290));
+        const int value = random.uniform(70, 255);
+        cv::circle(texture, center, random.uniform(2, 12), cv::Scalar(value, value, value), index % 3 == 0 ? 2 : -1);
+    }
+    cv::putText(texture, "VISION 27", cv::Point(75, 170), cv::FONT_HERSHEY_SIMPLEX, 1.2, cv::Scalar(255, 255, 255), 2);
+    for (const visionlab::FeatureMethod method : {visionlab::FeatureMethod::Sift, visionlab::FeatureMethod::Orb})
+    {
+        const auto report = std::make_shared<visionlab::FeatureMatchReport>();
+        visionlab::Pipeline pipeline;
+        visionlab::add_feature_matching(pipeline, method, report);
+        const visionlab::FrameResult result = pipeline.process(frame, true);
+        require(result.snapshots.size() == 5 && result.frame.index == 29 && result.frame.timestamp_seconds == frame.timestamp_seconds,
+                "Matching preserves frame identity and exposes four stages");
+        require(report->source_keypoints > 20 && report->target_keypoints > 20 && report->ratio_matches >= 10 && report->inliers >= 8 &&
+                    report->inliers <= report->ratio_matches,
+                "Textured transformed images produce keypoints, matches and geometric inliers");
+        require(report->median_known_transform_error && *report->median_known_transform_error < 3.0,
+                "Matches agree with independent known rotation and scale");
+        require(result.frame.image.width() == 960 && result.frame.image.height() == 374 && result.boxes.empty(),
+                "Matching canvas dimensions and overlay coordinates");
+        const visionlab::Image& original = result.snapshots.front().image;
+        require(std::equal(original.data(), original.data() + original.size_bytes(), frame.image.data()),
+                "Feature drawing preserves captured source");
+        const visionlab::FrameResult headless = pipeline.process(frame);
+        require(headless.snapshots.empty() && report->inliers >= 8 && report->median_known_transform_error &&
+                    *report->median_known_transform_error < 3.0,
+                "Repeated headless matching needs no snapshots or previous frame state");
+        texture.setTo(cv::Scalar(25, 25, 25));
+        pipeline.process(frame);
+        require(report->source_keypoints == 0 && report->ratio_matches == 0 && report->inliers == 0 &&
+                    !report->median_known_transform_error,
+                "Blank input clears previous matches and accuracy report");
+        pipeline.process(visionlab::Frame{0, std::nullopt, visionlab::Image(1, 1)});
+        require(report->inliers == 0, "Tiny inputs do not fail inside feature pyramids");
+        // Restore the fixture for the next algorithm.
+        std::copy(original.data(), original.data() + original.size_bytes(), frame.image.data());
+    }
+}
+
+void test_proto_tracker_pipeline()
+{
+    const visionlab::app::PipelineCatalog catalog;
+    visionlab::Pipeline pipeline = catalog.create("practice-28-proto-tracker");
+    for (std::uint64_t index = 0; index < 5; ++index)
+    {
+        visionlab::Frame frame{index, index / 30.0, visionlab::Image(160, 100)};
+        cv::Mat image(100, 160, CV_8UC3, frame.image.data(), frame.image.stride_bytes());
+        image.setTo(cv::Scalar(25, 25, 25));
+        cv::circle(image, cv::Point(40 + static_cast<int>(index) * 3, 50), 17, cv::Scalar(0, 140, 255), -1);
+        const visionlab::FrameResult result = pipeline.process(frame, index == 0);
+        require(result.boxes.size() == 1 && result.boxes[0].label == (index == 0 ? "ID 1 (new)" : "ID 1 (matched)"),
+                "Detector and tracker retain a moving circle's ID with or without snapshots");
+        if (index == 0)
+        {
+            require(result.snapshots.size() == 7 && result.snapshots[5].boxes[0].label.find("orange round object") == 0 &&
+                        result.snapshots[6].boxes[0].label == "ID 1 (new)",
+                    "Detection snapshot remains separate from tracked IDs");
+        }
+    }
+}
+
 } // namespace
 
 int main()
@@ -738,6 +1211,14 @@ int main()
         test_connected_components();
         test_component_area_filter();
         test_external_contours();
+        test_contour_measurements();
+        test_contour_hierarchy();
+        test_rotated_rectangle();
+        test_moments_centroid();
+        test_classical_detector();
+        test_harris_pipeline();
+        test_feature_matching();
+        test_proto_tracker_pipeline();
         cv::VideoWriter writer(fixture.string(), cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), 25.0, cv::Size(32, 24));
         require(writer.isOpened(), "MJPEG writer unavailable; cannot generate video test fixture");
         writer.write(cv::Mat(24, 32, CV_8UC3, cv::Scalar(0, 0, 255)));

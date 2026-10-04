@@ -1,5 +1,12 @@
 #include "catalogs.hpp"
+#include "visionlab/nearest_neighbor_stage.hpp"
 #ifdef VISIONLAB_WITH_OPENCV
+#include "visionlab/opencv/feature_matching.hpp"
+#include "visionlab/opencv/harris_pipeline.hpp"
+#include "visionlab/opencv/classical_detector.hpp"
+#include "visionlab/opencv/moments_stage.hpp"
+#include "visionlab/opencv/rotated_rectangle_stage.hpp"
+#include "visionlab/opencv/contour_hierarchy_stage.hpp"
 #include "visionlab/opencv/contours_stage.hpp"
 #include "visionlab/opencv/connected_components_stage.hpp"
 #include "visionlab/opencv/canny_walkthrough.hpp"
@@ -346,6 +353,73 @@ PipelineCatalog::PipelineCatalog()
              pipeline.add(std::make_unique<MorphologyExStage>(MorphologyOperation::Opening));
              pipeline.add(std::make_unique<MorphologyExStage>(MorphologyOperation::Closing));
              pipeline.add(std::make_unique<ContoursStage>());
+             return pipeline;
+         }});
+    add({"practice-21-contour-measurements", "Practice 21 - Contour measurements", []
+         {
+             Pipeline pipeline;
+             pipeline.add(std::make_unique<HsvColorStage>());
+             pipeline.add(std::make_unique<MorphologyExStage>(MorphologyOperation::Opening));
+             pipeline.add(std::make_unique<MorphologyExStage>(MorphologyOperation::Closing));
+             pipeline.add(std::make_unique<ContoursStage>(true));
+             return pipeline;
+         }});
+    add({"practice-22-contour-hierarchy", "Practice 22 - Contour hierarchy", []
+         {
+             Pipeline pipeline;
+             pipeline.add(std::make_unique<HsvColorStage>());
+             pipeline.add(std::make_unique<MorphologyExStage>(MorphologyOperation::Opening));
+             pipeline.add(std::make_unique<MorphologyExStage>(MorphologyOperation::Closing));
+             pipeline.add(std::make_unique<ContourHierarchyStage>());
+             return pipeline;
+         }});
+    add({"practice-23-rotated-rectangle", "Practice 23 - Rotated rectangle", []
+         {
+             Pipeline pipeline;
+             pipeline.add(std::make_unique<HsvColorStage>());
+             pipeline.add(std::make_unique<MorphologyExStage>(MorphologyOperation::Opening));
+             pipeline.add(std::make_unique<MorphologyExStage>(MorphologyOperation::Closing));
+             pipeline.add(std::make_unique<RotatedRectangleStage>());
+             return pipeline;
+         }});
+    add({"practice-24-moments", "Practice 24 - Moments and centroid", []
+         {
+             Pipeline pipeline;
+             pipeline.add(std::make_unique<HsvColorStage>());
+             pipeline.add(std::make_unique<MorphologyExStage>(MorphologyOperation::Opening));
+             pipeline.add(std::make_unique<MorphologyExStage>(MorphologyOperation::Closing));
+             pipeline.add(std::make_unique<MomentsStage>());
+             return pipeline;
+         }});
+    add({"practice-25-classical-detector", "Practice 25 - Classical orange detector", []
+         {
+             Pipeline pipeline;
+             add_classical_detector(pipeline);
+             return pipeline;
+         }});
+    add({"practice-26-harris", "Practice 26 - Harris corners", []
+         {
+             Pipeline pipeline;
+             add_harris_pipeline(pipeline);
+             return pipeline;
+         }});
+    add({"practice-27-sift", "Practice 27 - SIFT matching", []
+         {
+             Pipeline pipeline;
+             add_feature_matching(pipeline, FeatureMethod::Sift);
+             return pipeline;
+         }});
+    add({"practice-27-orb", "Practice 27 - ORB matching", []
+         {
+             Pipeline pipeline;
+             add_feature_matching(pipeline, FeatureMethod::Orb);
+             return pipeline;
+         }});
+    add({"practice-28-proto-tracker", "Practice 28 - Nearest-neighbor tracker", []
+         {
+             Pipeline pipeline;
+             add_classical_detector(pipeline);
+             pipeline.add(std::make_unique<NearestNeighborStage>(50.0));
              return pipeline;
          }});
 #endif

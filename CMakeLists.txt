@@ -18,20 +18,22 @@ function(visionlab_target target)
     endif()
 endfunction()
 
-add_library(visionlab_core src/core/image.cpp src/core/pipeline.cpp src/core/synthetic_source.cpp)
+add_library(visionlab_core src/core/image.cpp src/core/pipeline.cpp src/core/synthetic_source.cpp src/core/nearest_neighbor_stage.cpp)
 add_library(visionlab::core ALIAS visionlab_core)
 target_include_directories(visionlab_core PUBLIC include)
 visionlab_target(visionlab_core)
 
 if(VISIONLAB_WITH_OPENCV)
-    find_package(OpenCV 4 REQUIRED COMPONENTS core imgproc imgcodecs videoio)
+    find_package(OpenCV 4.4 REQUIRED COMPONENTS core imgproc imgcodecs videoio features2d calib3d)
     add_library(visionlab_opencv src/opencv/video_source.cpp src/opencv/image_source.cpp
         src/opencv/grayscale_stage.cpp src/opencv/mean_blur_stage.cpp src/opencv/gaussian_blur_stage.cpp
         src/opencv/sobel_x_stage.cpp src/opencv/canny_stage.cpp src/opencv/binary_threshold_stage.cpp
         src/opencv/erosion_stage.cpp src/opencv/dilation_stage.cpp src/opencv/hsv_color_stage.cpp
         src/opencv/adaptive_threshold_stage.cpp src/opencv/otsu_threshold_stage.cpp src/opencv/morphology_ex_stage.cpp
         src/opencv/gradient_direction_stage.cpp src/opencv/sobel_smoothing_stage.cpp src/opencv/canny_walkthrough.cpp
-        src/opencv/connected_components_stage.cpp src/opencv/contours_stage.cpp)
+        src/opencv/connected_components_stage.cpp src/opencv/contours_stage.cpp src/opencv/contour_hierarchy_stage.cpp
+        src/opencv/rotated_rectangle_stage.cpp src/opencv/moments_stage.cpp src/opencv/classical_detector.cpp
+        src/opencv/harris_pipeline.cpp src/opencv/feature_matching.cpp)
     add_library(visionlab::opencv ALIAS visionlab_opencv)
     target_link_libraries(visionlab_opencv PUBLIC visionlab::core PRIVATE ${OpenCV_LIBS})
     target_include_directories(visionlab_opencv SYSTEM PRIVATE ${OpenCV_INCLUDE_DIRS})
